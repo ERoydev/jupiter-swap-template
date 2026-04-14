@@ -79,7 +79,13 @@ export function QuoteDisplay({
           />
           <DetailRow
             label="Price Impact"
-            value={<PriceImpactBadge impactBps={quote.feeBps} />}
+            value={
+              <PriceImpactBadge
+                impactBps={Math.abs(
+                  Math.round(parseFloat(quote.priceImpactPct ?? "0") * 100),
+                )}
+              />
+            }
           />
           <DetailRow
             label="Router"

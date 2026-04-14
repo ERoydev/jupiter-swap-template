@@ -15,6 +15,7 @@ export interface OrderResponse {
   mode: string;
   feeBps: number;
   feeMint: string;
+  priceImpactPct?: string;
 }
 
 export interface ExecuteResponse {
