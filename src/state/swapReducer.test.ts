@@ -160,6 +160,9 @@ describe("swapReducer — invalid transitions", () => {
     const logged = JSON.parse(warnSpy.mock.calls[0]![0] as string);
     expect(logged.event).toBe("invalid_transition");
     expect(logged.from).toBe("idle");
+    expect(logged.trigger).toBe("EXECUTE_SUCCESS");
+    expect(typeof logged.timestamp).toBe("string");
+    expect(logged.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     warnSpy.mockRestore();
   });
 
@@ -249,11 +252,39 @@ describe("swapReducer — wallet disconnect", () => {
     expect(result.state).toBe(SwapState.Executing);
   });
 
-  // WD-03: Disconnect during Idle
-  it("stays in Idle on WALLET_DISCONNECTED", () => {
+  // WD-03: Disconnect during Idle — clean transition, no warning
+  it("transitions Idle → Idle on WALLET_DISCONNECTED without logging", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const result = swapReducer(stateAt(SwapState.Idle), { type: "WALLET_DISCONNECTED" });
     expect(result.state).toBe(SwapState.Idle);
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  // WD-03b: Disconnect during QuoteReady — clean transition to Idle
+  it("transitions QuoteReady → Idle on WALLET_DISCONNECTED without logging", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const result = swapReducer(stateAt(SwapState.QuoteReady), { type: "WALLET_DISCONNECTED" });
+    expect(result.state).toBe(SwapState.Idle);
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  // WD-03c: Disconnect during LoadingQuote — clean transition to Idle
+  it("transitions LoadingQuote → Idle on WALLET_DISCONNECTED without logging", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const result = swapReducer(stateAt(SwapState.LoadingQuote), { type: "WALLET_DISCONNECTED" });
+    expect(result.state).toBe(SwapState.Idle);
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  // WD-03d: Disconnect during Success — clean transition to Idle
+  it("transitions Success → Idle on WALLET_DISCONNECTED without logging", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const result = swapReducer(stateAt(SwapState.Success), { type: "WALLET_DISCONNECTED" });
+    expect(result.state).toBe(SwapState.Idle);
+    expect(warnSpy).not.toHaveBeenCalled();
     warnSpy.mockRestore();
   });
 

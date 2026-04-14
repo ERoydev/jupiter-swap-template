@@ -46,6 +46,9 @@ export function swapReducer(
       if (action.type === "FETCH_QUOTE") {
         return { ...current, state: SwapState.LoadingQuote, error: null };
       }
+      if (action.type === "WALLET_DISCONNECTED") {
+        return { ...initialState };
+      }
       break;
 
     case SwapState.LoadingQuote:
@@ -68,6 +71,9 @@ export function swapReducer(
           error: new SwapError(action.errorType, "Quote request timed out", undefined, false, { timeoutMs: 10000 }),
         };
       }
+      if (action.type === "WALLET_DISCONNECTED") {
+        return { ...initialState };
+      }
       break;
 
     case SwapState.QuoteReady:
@@ -82,6 +88,9 @@ export function swapReducer(
       }
       if (action.type === "FETCH_QUOTE") {
         return { ...current, state: SwapState.LoadingQuote };
+      }
+      if (action.type === "WALLET_DISCONNECTED") {
+        return { ...initialState };
       }
       break;
 
@@ -149,7 +158,7 @@ export function swapReducer(
       break;
 
     case SwapState.Success:
-      if (action.type === "NEW_SWAP") {
+      if (action.type === "NEW_SWAP" || action.type === "WALLET_DISCONNECTED") {
         return { ...initialState };
       }
       break;
@@ -159,9 +168,8 @@ export function swapReducer(
   console.warn(JSON.stringify({
     event: "invalid_transition",
     from: current.state,
-    to: action.type,
     trigger: action.type,
-    timestamp: Date.now(),
+    timestamp: new Date().toISOString(),
   }));
 
   return current;

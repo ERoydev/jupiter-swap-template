@@ -6,18 +6,15 @@ import {
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
 import { PhantomWalletAdapter } from "@solana/wallet-adapter-wallets";
 import { WalletButton } from "./ui/WalletButton";
+import { SOLANA_RPC_URL } from "./config/env";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
-
-const RPC_ENDPOINT =
-  import.meta.env.VITE_SOLANA_RPC_URL ||
-  "https://api.mainnet-beta.solana.com";
 
 export function App() {
   const wallets = useMemo(() => [new PhantomWalletAdapter()], []);
 
   return (
-    <ConnectionProvider endpoint={RPC_ENDPOINT}>
+    <ConnectionProvider endpoint={SOLANA_RPC_URL}>
       <WalletProvider wallets={wallets} autoConnect={false}>
         <WalletModalProvider>
           <div className="min-h-screen bg-background flex items-center justify-center p-4">
