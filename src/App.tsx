@@ -1,14 +1,38 @@
+import { useMemo } from "react";
+import {
+  ConnectionProvider,
+  WalletProvider,
+} from "@solana/wallet-adapter-react";
+import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
+import { PhantomWalletAdapter } from "@solana/wallet-adapter-wallets";
+import { WalletButton } from "./ui/WalletButton";
+
+import "@solana/wallet-adapter-react-ui/styles.css";
+
+const RPC_ENDPOINT =
+  import.meta.env.VITE_SOLANA_RPC_URL ||
+  "https://api.mainnet-beta.solana.com";
+
 export function App() {
+  const wallets = useMemo(() => [new PhantomWalletAdapter()], []);
+
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="text-center">
-        <h1 className="text-2xl font-semibold text-foreground">
-          Jupiter Swap Template
-        </h1>
-        <p className="text-sm text-muted-foreground mt-2">
-          Scaffold ready. Implementation in progress.
-        </p>
-      </div>
-    </div>
+    <ConnectionProvider endpoint={RPC_ENDPOINT}>
+      <WalletProvider wallets={wallets} autoConnect={false}>
+        <WalletModalProvider>
+          <div className="min-h-screen bg-background flex items-center justify-center p-4">
+            <div className="w-full max-w-[420px] space-y-4">
+              <div className="flex items-center justify-between">
+                <h1 className="text-xl font-semibold text-foreground">Swap</h1>
+                <WalletButton />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Connect your wallet to start swapping.
+              </p>
+            </div>
+          </div>
+        </WalletModalProvider>
+      </WalletProvider>
+    </ConnectionProvider>
   );
 }
