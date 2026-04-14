@@ -1,0 +1,204 @@
+{
+  "feature": "jupiter-swap-template",
+  "flow": "greenfield",
+  "version": "next-2.0",
+  "created": "2026-04-14T06:44:29.255Z",
+  "lastUpdated": "2026-04-14T10:00:00.000Z",
+  "currentPhase": "implement",
+  "currentStep": null,
+  "currentCheckpoint": null,
+  "complexityTier": "high",
+  "currentStory": null,
+  "phases": {
+    "research": {
+      "status": "complete",
+      "startedAt": "2026-04-14T06:44:29.255Z",
+      "completedAt": "2026-04-14T07:05:00.000Z",
+      "gateResult": "pass"
+    },
+    "specify": {
+      "status": "complete",
+      "startedAt": "2026-04-14T07:05:00.000Z",
+      "completedAt": "2026-04-14T07:35:00.000Z",
+      "gateResult": "pass"
+    },
+    "architecture": {
+      "status": "complete",
+      "startedAt": "2026-04-14T07:35:00.000Z",
+      "completedAt": "2026-04-14T08:10:00.000Z",
+      "gateResult": "pass"
+    },
+    "plan": {
+      "status": "complete",
+      "startedAt": "2026-04-14T08:10:00.000Z",
+      "completedAt": "2026-04-14T08:45:00.000Z",
+      "gateResult": "pass",
+      "wavesPlanned": 4
+    }
+  },
+  "storiesDone": 2,
+  "storiesTotal": 11,
+  "changeStories": [],
+  "tooling": {
+    "format": null,
+    "lint": "tsc --noEmit",
+    "lint_fix": null,
+    "build": "vite build",
+    "test": "vitest run",
+    "test_changed": "vitest --changed HEAD~1",
+    "test_report": "vitest-json",
+    "security": null
+  },
+  "baselineTests": {
+    "total": 54,
+    "passing": 54,
+    "failing": 0
+  },
+  "metrics": {
+    "gates": {
+      "passes": 6,
+      "fails": 0,
+      "overrides": 0,
+      "backNavigations": 0,
+      "blockingFails": 0
+    },
+    "phases": {
+      "research": {
+        "durationMinutes": 21,
+        "revisions": 1,
+        "gateAttempts": 1
+      },
+      "specify": {
+        "durationMinutes": 30,
+        "revisions": 0,
+        "gateAttempts": 1,
+        "personaCount": 3,
+        "personaConcerns": 12
+      },
+      "architecture": {
+        "durationMinutes": 35,
+        "revisions": 1,
+        "gateAttempts": 1,
+        "deferredDecisions": 1,
+        "resolvedDecisions": 4
+      },
+      "plan": {
+        "durationMinutes": 35,
+        "revisions": 0,
+        "gateAttempts": 1,
+        "wavesPlanned": 4
+      }
+    },
+    "stories": {
+      "completed": 2,
+      "skipped": 0,
+      "changeStoriesCreated": 0,
+      "gate5Passes": 2,
+      "gate5Fails": 0,
+      "gate5Overrides": 0,
+      "avgTasksPerStory": 0,
+      "sizeDistribution": {
+        "S": 1,
+        "M": 1,
+        "L": 0
+      }
+    },
+    "tasks": {
+      "totalCompleted": 7,
+      "totalCompletedNoCommit": 0,
+      "totalSkipped": 0,
+      "totalRevisions": 0,
+      "totalVerificationCycles": 7,
+      "firstPassSuccess": 7,
+      "tddCount": 3,
+      "tddTotal": 7,
+      "avgVerificationCycles": 1
+    },
+    "codeReview": {
+      "reviewsRun": 2,
+      "totalFindings": 10,
+      "criticalFindings": 0,
+      "highFindings": 1,
+      "mediumFindings": 4,
+      "lowFindings": 5,
+      "findingsDeferred": 4
+    },
+    "quality": {
+      "interfaceAudits": 1,
+      "interfaceMismatches": 0,
+      "amendments": 0,
+      "concerns": 0,
+      "concernsBySeverity": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "low": 0
+      }
+    },
+    "drift": {
+      "taskDeviations": 0,
+      "storiesResizedDuringImpl": 0
+    },
+    "estimation": {
+      "sizeAccuracy": {
+        "S": {
+          "planned": 0,
+          "avgActualTasks": 0
+        },
+        "M": {
+          "planned": 0,
+          "avgActualTasks": 0
+        },
+        "L": {
+          "planned": 0,
+          "avgActualTasks": 0
+        }
+      }
+    },
+    "execution": {
+      "totalSessions": 2,
+      "pauseResumeCount": 1,
+      "agentTeamsUsed": false,
+      "parallelWaves": 0,
+      "parallelStories": 0,
+      "subagentSpawns": 0
+    },
+    "optionalSkills": {
+      "designer": {
+        "used": true,
+        "mode": "B",
+        "completedAt": "2026-04-14T08:30:00.000Z"
+      },
+      "devopsPass1": {
+        "used": false,
+        "completedAt": null
+      },
+      "devopsPass2": {
+        "used": false,
+        "completedAt": null
+      },
+      "qa": {
+        "used": true,
+        "completedAt": "2026-04-14T09:15:00.000Z"
+      },
+      "notion": {
+        "used": false,
+        "syncCount": 0,
+        "completedAt": null
+      }
+    },
+    "git": {
+      "totalCommits": 9,
+      "totalFilesChanged": 21,
+      "totalInsertions": 1727,
+      "totalDeletions": 33,
+      "testsAdded": 54
+    }
+  },
+  "waveStrategy": {},
+  "devops": {
+    "pass1": "pending",
+    "pass2": "pending",
+    "pass2Partial": false
+  }
+}

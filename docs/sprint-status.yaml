@@ -1,0 +1,85 @@
+version: "next-2.0"
+feature: jupiter-swap-template
+epics:
+  - id: 1
+    name: Foundation
+    stories:
+      - id: "1-1"
+        slug: project-scaffold-types-config
+        title: "Project Scaffold + Shared Types + Config"
+        size: S
+        status: done
+        wave: 1
+        dependencies: []
+      - id: "1-2"
+        slug: wallet-connection-state-machine
+        title: "Wallet Connection + State Machine"
+        size: M
+        status: done
+        wave: 1
+        dependencies: ["1-1"]
+  - id: 2
+    name: Quote Flow
+    stories:
+      - id: "2-1"
+        slug: jupiter-order-service-quote-display
+        title: "Jupiter Order Service + Quote Display"
+        size: M
+        status: backlog
+        wave: 2
+        dependencies: ["1-1", "1-2"]
+      - id: "2-2"
+        slug: token-service-token-selector
+        title: "Token Service + Token Selector UI"
+        size: M
+        status: backlog
+        wave: 2
+        dependencies: ["1-1"]
+      - id: "2-3"
+        slug: balance-service-proactive-warnings
+        title: "Balance Service + Proactive Warnings"
+        size: S
+        status: backlog
+        wave: 2
+        dependencies: ["1-2", "2-2"]
+  - id: 3
+    name: Swap Execution
+    stories:
+      - id: "3-1"
+        slug: preflight-checks-transaction-signing
+        title: "Pre-flight Checks + Transaction Signing"
+        size: M
+        status: backlog
+        wave: 3
+        dependencies: ["2-1", "2-3"]
+      - id: "3-2"
+        slug: execute-flow-success-display
+        title: "Execute Flow + Success Display"
+        size: M
+        status: backlog
+        wave: 3
+        dependencies: ["3-1"]
+      - id: "3-3"
+        slug: retry-logic-error-recovery
+        title: "Retry Logic + Error Recovery"
+        size: M
+        status: backlog
+        wave: 3
+        dependencies: ["3-2"]
+  - id: 4
+    name: Resilience & Polish
+    stories:
+      - id: "4-1"
+        slug: preflight-ux-responsive-layout
+        title: "Pre-flight UX + Responsive Layout"
+        size: M
+        status: backlog
+        wave: 4
+        dependencies: ["3-1"]
+      - id: "4-2"
+        slug: comprehensive-test-suite
+        title: "Comprehensive Test Suite"
+        size: M
+        status: backlog
+        wave: 4
+        dependencies: ["3-3", "4-1"]
