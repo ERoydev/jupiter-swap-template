@@ -4,8 +4,12 @@ import {
     WalletProvider,
 } from "@solana/wallet-adapter-react";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
+import {
+    WalletModalProvider,
+    useWalletModal,
+} from "@solana/wallet-adapter-react-ui";
 import { PhantomWalletAdapter } from "@solana/wallet-adapter-wallets";
+import { Button } from "@/components/ui/button";
 import { WalletButton } from "./ui/WalletButton";
 import { QuoteDisplay } from "./ui/QuoteDisplay";
 import { useSwapState } from "./state/useSwapState";
@@ -28,6 +32,7 @@ const DEBOUNCE_MS = 300;
 
 function SwapCard() {
     const { publicKey, connected } = useWallet();
+    const { setVisible: setWalletModalVisible } = useWalletModal();
     const { context, dispatch } = useSwapState();
     const [inputAmount, setInputAmount] = useState("");
     const abortControllerRef = useRef<AbortController | null>(null);
@@ -56,6 +61,9 @@ function SwapCard() {
                     },
                     controller.signal,
                 );
+                if (controller !== abortControllerRef.current) {
+                    return; // Stale response (timeout aborted or superseded)
+                }
                 dispatch({
                     type: "QUOTE_RECEIVED",
                     quote,
@@ -64,6 +72,9 @@ function SwapCard() {
             } catch (err) {
                 if (err instanceof DOMException && err.name === "AbortError") {
                     return; // Cancelled — ignore
+                }
+                if (controller !== abortControllerRef.current) {
+                    return; // Stale error (another fetch has superseded)
                 }
                 if (err instanceof SwapError) {
                     dispatch({ type: "QUOTE_ERROR", error: err });
@@ -80,6 +91,14 @@ function SwapCard() {
         },
         [connected, publicKey, dispatch],
     );
+
+    // Abort in-flight fetch when a TIMEOUT (or any error) transitions us to Error state
+    useEffect(() => {
+        if (context.state === SwapState.Error && abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+        }
+    }, [context.state]);
 
     const handleAmountChange = useCallback(
         (value: string) => {
@@ -222,9 +241,15 @@ function SwapCard() {
 
             {/* Swap / Connect button */}
             {!connected ? (
-                <p className="text-sm text-muted-foreground text-center">
-                    Connect your wallet to swap.
-                </p>
+                <Button
+                    type="button"
+                    size="lg"
+                    className="w-full py-3 text-sm font-medium"
+                    onClick={() => setWalletModalVisible(true)}
+                    aria-label="Connect Wallet"
+                >
+                    Connect Wallet
+                </Button>
             ) : (
                 <button
                     disabled={!hasQuote}

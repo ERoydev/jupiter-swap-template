@@ -99,14 +99,14 @@ As a swap end user, I want to see a live price quote when I select tokens and en
 - **Plan match:** Matches
 
 ## Tasks
-- [ ] Task 1: jupiterService + tests
+- [x] Task 1: jupiterService + tests
   - Maps to: AC-1 (getOrder returns OrderResponse), AC-2 (AbortController cancellation), AC-6 (error -> SwapError)
   - Files: `src/services/jupiterService.ts`, `src/services/jupiterService.test.ts`
-- [ ] Task 2: QuoteDisplay + PriceImpactBadge + QuoteFreshnessIndicator
+- [x] Task 2: QuoteDisplay + PriceImpactBadge + QuoteFreshnessIndicator
   - Maps to: AC-3 (quote details rendering), AC-4 (freshness indicator at 30s), AC-5 (price impact thresholds)
   - Files: `src/ui/QuoteDisplay.tsx`, `src/ui/PriceImpactBadge.tsx`, `src/ui/QuoteFreshnessIndicator.tsx`
   - Prerequisite: `npx shadcn add badge collapsible` (Badge and Collapsible needed)
-- [ ] Task 3: App integration -- debounced quote fetch + quote-only mode
+- [x] Task 3: App integration -- debounced quote fetch + quote-only mode
   - Maps to: AC-2 (300ms debounce + AbortController), AC-3 (quote display in UI), AC-6 (error state recovery), AC-7 (no-wallet quote-only mode)
   - Files: `src/App.tsx` (modify)
 

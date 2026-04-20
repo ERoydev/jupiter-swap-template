@@ -80,11 +80,24 @@ export function QuoteDisplay({
           <DetailRow
             label="Price Impact"
             value={
-              <PriceImpactBadge
-                impactBps={Math.abs(
-                  Math.round(parseFloat(quote.priceImpactPct ?? "0") * 100),
-                )}
-              />
+              quote.priceImpactPct === undefined ||
+              quote.priceImpactPct === null ||
+              quote.priceImpactPct === ""
+                ? (
+                    <Badge
+                      variant="outline"
+                      aria-label="Price impact unavailable"
+                    >
+                      N/A
+                    </Badge>
+                  )
+                : (
+                    <PriceImpactBadge
+                      impactBps={Math.abs(
+                        Math.round(parseFloat(quote.priceImpactPct) * 100),
+                      )}
+                    />
+                  )
             }
           />
           <DetailRow
