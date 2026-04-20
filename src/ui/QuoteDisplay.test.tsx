@@ -34,8 +34,8 @@ describe("QuoteDisplay — AC-3 quote rendering", () => {
     const { container } = render(
       <QuoteDisplay quote={makeQuote()} {...DEFAULTS} />,
     );
-    // 1 SOL → 1.5 USDC
-    expect(container.textContent).toContain("1 SOL = 1.5000 USDC");
+    // 1 SOL → 1.5 USDC (3-decimal display)
+    expect(container.textContent).toContain("1 SOL = 1.500 USDC");
   });
 
   it("renders the output amount with output symbol", () => {

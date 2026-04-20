@@ -21,6 +21,8 @@ interface QuoteDisplayProps {
   defaultExpanded?: boolean;
 }
 
+const DISPLAY_DECIMALS = 3;
+
 function calculateRate(
   inputAmount: string,
   outAmount: string,
@@ -30,14 +32,14 @@ function calculateRate(
   const input = Number(inputAmount) / 10 ** inputDecimals;
   const output = Number(outAmount) / 10 ** outputDecimals;
   if (input === 0) return "0";
-  return (output / input).toFixed(outputDecimals > 2 ? 4 : 2);
+  return (output / input).toFixed(DISPLAY_DECIMALS);
 }
 
 function formatAmount(amount: string, decimals: number): string {
   const value = Number(amount) / 10 ** decimals;
   return value.toLocaleString(undefined, {
     minimumFractionDigits: 2,
-    maximumFractionDigits: Math.min(decimals, 6),
+    maximumFractionDigits: DISPLAY_DECIMALS,
   });
 }
 
