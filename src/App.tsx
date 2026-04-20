@@ -187,7 +187,7 @@ export function SwapCard() {
                               10 ** DEFAULT_OUTPUT_DECIMALS
                           ).toLocaleString(undefined, {
                               minimumFractionDigits: 2,
-                              maximumFractionDigits: 3,
+                              maximumFractionDigits: 4,
                           })
                         : "0.00"}
                 </div>

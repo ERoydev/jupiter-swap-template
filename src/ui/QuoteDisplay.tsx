@@ -21,7 +21,7 @@ interface QuoteDisplayProps {
   defaultExpanded?: boolean;
 }
 
-const DISPLAY_DECIMALS = 3;
+const DISPLAY_DECIMALS = 4;
 
 function calculateRate(
   inputAmount: string,
