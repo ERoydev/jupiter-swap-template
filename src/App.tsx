@@ -30,7 +30,7 @@ const DEFAULT_OUTPUT_DECIMALS = 6;
 
 const DEBOUNCE_MS = 300;
 
-function SwapCard() {
+export function SwapCard() {
     const { publicKey, connected } = useWallet();
     const { setVisible: setWalletModalVisible } = useWalletModal();
     const { context, dispatch } = useSwapState();
