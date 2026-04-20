@@ -25,7 +25,7 @@ epics:
         slug: jupiter-order-service-quote-display
         title: "Jupiter Order Service + Quote Display"
         size: M
-        status: backlog
+        status: done
         wave: 2
         dependencies: ["1-1", "1-2"]
       - id: "2-2"
