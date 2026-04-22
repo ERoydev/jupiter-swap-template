@@ -19,7 +19,7 @@ async function loadGetOrder() {
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.resetModules();
-  vi.stubEnv("VITE_JUPITER_API_URL", "https://api.jup.ag/swap/v2");
+  vi.stubEnv("VITE_JUPITER_API_URL", "https://api.jup.ag");
   vi.stubEnv("VITE_JUPITER_API_KEY", "test-key");
   vi.stubEnv("VITE_SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com");
 });

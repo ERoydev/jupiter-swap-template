@@ -15,6 +15,7 @@ export enum ErrorType {
   ExecutionTimeout = "ExecutionTimeout",
   TokenListError = "TokenListError",
   BalanceCheckFailed = "BalanceCheckFailed",
+  ConfigError = "ConfigError",
   UnknownError = "UnknownError",
 }
 
