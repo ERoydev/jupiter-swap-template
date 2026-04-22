@@ -155,7 +155,7 @@ User returns to a working state after encountering any error.
 
 - **AC-FR-1:** GET /order without `taker` returns quote (outAmount, router, feeBps, mode) and UI renders it. Transaction field is null. Swap button disabled. (covers FR-1)
 - **AC-FR-2:** After wallet connection, swap button enabled (provided pre-flight checks pass). Subsequent /order calls include `taker`. (covers FR-2)
-- **AC-FR-3:** Token selector supports search by partial symbol (case-insensitive) and mint address. Each option shows symbol, decimals, logo (or fallback). Selection updates swap form. (covers FR-3)
+- **AC-FR-3:** Token selector supports search by partial symbol (case-insensitive), token name, and mint address — all handled by a single Jupiter endpoint with no client-side branching. Each option shows symbol, name, decimals, icon (or fallback), optional trust badges (verified / LST / Token2022 / Frozen), and — when a wallet is connected — balance + USD value. Selection updates swap form. (covers FR-3; amended A-2)
 - **AC-FR-4:** Before swap, UI displays: expected output amount, exchange rate, router, feeBps, price impact. All from /order response. (covers FR-4)
 - **AC-FR-5:** Input changes trigger debounced /order request. Stale quote at swap time triggers fresh /order before signing. (covers FR-5)
 - **AC-FR-6:** Distinct visual states for each SwapState: LoadingQuote (skeleton/spinner), Signing (wallet prompt), Executing (pending), Success (confirmed + tx link), Error (message + action). (covers FR-6)

@@ -62,40 +62,42 @@ created: 2026-04-14
 **NFR Coverage:** AC-U-2 (price impact), AC-U-3 (freshness)
 
 ### Story 2-2: Token Service + Token Selector UI [M]
-**User Story:** As a swap end user, I want to search for and select tokens with full metadata, so that I can confidently choose the right tokens for my swap.
+**User Story:** As a swap end user, I want to search and pick tokens with live balances and trust signals, so that I can confidently choose what to swap and see what I already hold.
 **Dependencies:** 1-1
 **Wave:** 2
+**Amended:** A-2 (DD-9 rewrite), A-3 (DD-10 retired), A-4 (balanceService Ultra), A-5 (API-key optional for tokens/balances)
 
-**Acceptance Criteria:**
-- Given `tokenService.initialize()` is called on app load, When it completes, Then ~100-200 verified tokens are cached in memory with symbol, name, decimals, logoURI, mint
-- Given the token cache, When user opens token selector and types "US", Then local cache is searched case-insensitively and USDC, USDT appear instantly
-- Given a search query with no local matches and length >= 3, When submitted, Then Jupiter Token API is queried as fallback (debounce + AbortController)
-- Given no matches anywhere, When results are empty, Then Empty component shows "No tokens found"
-- Given a token in the selector, When displayed, Then it shows: Avatar (logo or fallback), symbol, name, decimals (e.g., "USD Coin · 6 decimals")
-- Given a token is selected, When user clicks it, Then selector closes, token updates in swap form, if both tokens + amount set → quote fetch triggers
-- Given same token selected for both sides, When validation runs, Then error "Cannot swap a token to itself"
-- Given selected tokens, When user returns (new session), Then persisted tokens from localStorage pre-loaded
-- Given cache TTL expires and app regains focus, When visibilitychange fires, Then verified tokens refresh silently
-- Given search cache > 500 entries, When new results added, Then LRU eviction removes oldest
-- Given mobile viewport, When token selector opens, Then renders as Drawer. On desktop → Dialog
+**Acceptance Criteria:** (see `docs/stories/2-2-token-service-token-selector.md` for full AC detail; 12 ACs summarized here)
+- Boot defaults: `DEFAULT_INPUT_MINT` (SOL) / `DEFAULT_OUTPUT_MINT` (USDC) pre-select at mount with no network call
+- Blue-chip seed: modal mount fires one `GET /tokens/v2/search?query=` — server is the source, no hardcoded `POPULAR_TOKENS`
+- Debounced search: `lodash.debounce(setSearch, 200)` feeds TanStack `queryKey: ['jupiter-search', debouncedQuery]`; staleTime 5 min empty / 30 s text
+- One endpoint for symbol, name, OR mint; cancellation via TanStack `signal`
+- Balance merge: `/ultra/v1/balances/{pubkey}` (staleTime 30 s) merged client-side; rows with `uiAmount > 0` float to top sorted by `_usdValue` desc
+- Token row: 3-tier icon fallback (wsrv.nl → raw → inline SVG), symbol, name, balance + USD, trust badges, unverified warning overlay
+- Virtualization: `react-window` FixedSizeList (itemSize 72), no `.slice` truncation
+- Five UI states: loading, error (retry), empty, success, disabled
+- Same-token guard: rows matching `excludeMint` render `aria-disabled`; onClick is no-op
+- Selection flow: `onSelect(token)` once + `onOpenChange(false)`
+- Lite-api fallback: `/tokens/*` and `/ultra/*` auto-route to `lite-api.jup.ag` when key missing; `/swap/*` throws `SwapError(ConfigError)`
 
 **FR Coverage:** FR-3
-**NFR Coverage:** DD-9 (token list), DD-10 (persistence)
+**NFR Coverage:** DD-9 (amended — TanStack Query live search), DD-13 (amended — Ultra-primary balances)
 
-### Story 2-3: Balance Service + Proactive Warnings [S]
-**User Story:** As a swap end user, I want to see my token balances and get warned about insufficient SOL before I try to swap, so that I don't waste time on swaps that will fail.
+### Story 2-3: SOL Preflight Warning [S]
+**User Story:** As a swap end user, I want to be warned about insufficient SOL for network fees before I try to swap, so that I don't waste time on swaps that will fail at signing.
 **Dependencies:** 1-2, 2-2
 **Wave:** 2
+**Amended:** A-4 — scope narrowed. Token-balance display now lives in Story 2-2's selector via `useWalletBalances`. This story retains the SOL-balance preflight warning surface only. `balanceService` public API unchanged; implementation routes through Ultra with SOL-only RPC fallback.
 
 **Acceptance Criteria:**
-- Given `balanceService.getSolBalance(publicKey)`, When RPC responds, Then returns SOL balance in lamports
-- Given `balanceService.getTokenBalance(publicKey, mint)`, When RPC responds, Then returns token balance in smallest units
-- Given wallet connected, When connection succeeds, Then SOL balance fetched. If < 0.01 SOL → warning Alert: "You need at least 0.01 SOL for transaction fees"
-- Given wallet connected and input token selected, When balance fetched, Then TokenInput displays "Balance: {amount}" and enables MAX button
-- Given RPC call fails, When failure occurs, Then warning overlay: "Unable to verify balance" with "Retry Check" and "Proceed Without Verification" buttons
+- Given `balanceService.getSolBalance(publicKey)`, When called, Then primary path hits `/ultra/v1/balances/{pubkey}` and returns SOL balance in lamports; on Ultra error, falls back to `connection.getBalance(publicKey)` (web3.js RPC)
+- Given `balanceService.getTokenBalance(publicKey, mint)`, When called, Then returns token balance via the same Ultra call. Ultra-only — no RPC fallback (Story 3-1 preflight uses this)
+- Given wallet connected, When connection succeeds, Then SOL balance fetched proactively via the shared `useWalletBalances` cache. If `< MIN_SOL_BALANCE` (0.01) → warning Alert: "You need at least 0.01 SOL for transaction fees"
+- Given wallet connected and input token selected, When the selector is open (Story 2-2), Then the token row already shows balance + USD — no separate `TokenInput` balance field needed in this story
+- Given both Ultra and RPC fail for SOL, When failure occurs, Then warning overlay: "Unable to verify SOL balance" with "Retry Check" and "Proceed Without Verification" buttons
 
-**FR Coverage:** FR-11 (checks 6, 7)
-**NFR Coverage:** AC-U-4 (proactive SOL warning), AC-A-2 (RPC degradation)
+**FR Coverage:** FR-11 (check 6: SOL balance preflight)
+**NFR Coverage:** AC-U-4 (proactive SOL warning), AC-A-2 (Ultra/RPC graceful degradation)
 
 ## Epic 3: Swap Execution
 
@@ -171,8 +173,12 @@ created: 2026-04-14
 **Wave:** 4
 
 **Acceptance Criteria:**
-- Given `jupiterService.test.ts`, Then: /order + /execute request/response, AbortController, errors
-- Given `tokenService.test.ts`, Then: cache init, search, LRU eviction, refresh, persistence
+- Given `jupiterClient.test.ts`, Then: base-URL selection (api vs lite-api per path prefix + key presence), header injection, ConfigError thrown for /swap/* without key, error mapping for non-ok / abort / network
+- Given `jupiterService.test.ts`, Then: /order + /execute request/response via jupiterClient, AbortController, errors
+- Given `tokenService.test.ts`, Then: empty-query blue-chip call, text-query search, request cancellation via signal, error propagation (no cache-init/LRU/refresh/persistence — those are retired per A-2)
+- Given `useTokenSearch.test.ts`, Then: debounce collapses rapid keystrokes into one queryKey change, staleTime differs between empty and text queries
+- Given `balanceService.test.ts`, Then: Ultra primary success, Ultra-fail + RPC fallback for SOL, Ultra-fail no-fallback for token mint
+- Given `useWalletBalances.test.ts`, Then: hook disabled when wallet not connected, enabled when connected, queryKey includes pubkey
 - Given `swapReducer.test.ts`, Then: 13 transitions, invalid rejection, guards
 - Given `swapState.test.ts` (fake timers), Then: 3 timeout transitions
 - Given `preflightChecks.test.ts`, Then: 7 checks × pass/fail

@@ -26,7 +26,7 @@ securityDepth: high
 - Partial signing mandatory — partiallySignTransaction, not signTransaction
 - Retry always starts from fresh /order — never resubmit signed tx
 - Jupiter handles: priority fees, slippage (RTSE), ALTs, compute budget, ATA creation, landing
-- API key required on every Jupiter request (x-api-key header)
+- API key required for **swap endpoints only** (`/swap/v2/order`, `/swap/v2/execute`). Tokens (`/tokens/v2/*`) and balances (`/ultra/v1/*`) fall back to `https://lite-api.jup.ag` (keyless) when `VITE_JUPITER_API_KEY` is absent. Amended A-5.
 
 ---
 
@@ -57,7 +57,8 @@ securityDepth: high
 │  swapHandler │ transactionSigner │ preflightChecks   │
 ├─────────────────────────────────────────────────────┤
 │                   Service Layer                      │
-│  jupiterService │ tokenService │ balanceService      │
+│  jupiterClient │ jupiterService │ tokenService │    │
+│  balanceService                                      │
 ├─────────────────────────────────────────────────────┤
 │                Types │ Config │ Utils                │
 │  swap.ts │ tokens.ts │ errors.ts │ constants.ts │    │
@@ -108,9 +109,10 @@ securityDepth: high
 
 | Component | Responsibility |
 |-----------|---------------|
-| `jupiterService` | HTTP client for Jupiter API v2. Methods: `getOrder(params)` → OrderResponse, `executeOrder(signedTx, requestId)` → ExecuteResponse. Handles x-api-key header injection, request cancellation (AbortController), response parsing. |
-| `tokenService` | Token list management: fetch verified tokens on init, cache in memory, search with API fallback for unknown tokens. Manages cache refresh. |
-| `balanceService` | RPC queries: `getSolBalance(publicKey)` → number, `getTokenBalance(publicKey, mint)` → number. Used by preflightChecks. Handles RPC failure gracefully (AC-A-2). |
+| `jupiterClient` | Shared HTTP client. Owns base-URL selection (`api.jup.ag` with key, `lite-api.jup.ag` without) and the `x-api-key` header policy. Routes `/swap/*` paths strictly through keyed URL; throws `SwapError(ConfigError)` synchronously when key missing. Methods: `get<T>(path, params?, signal?)`, `post<T>(path, body, signal?)`. Maps non-ok/network/abort to typed `SwapError`. Amended A-5. |
+| `jupiterService` | Swap-endpoint wrapper on top of `jupiterClient`. Methods: `getOrder(params)` → `OrderResponse`, `executeOrder(signedTx, requestId)` → `ExecuteResponse`. |
+| `tokenService` | Thin `/tokens/v2/search` wrapper. Method: `search(query, signal?)` → `TokenInfo[]`. Empty query returns Jupiter's server-curated blue-chip list. No client-side cache — TanStack Query owns caching via `useTokenSearch`. Amended A-2. |
+| `balanceService` | Balance query layer. Primary: `getAllBalances(pubkey, signal?)` → `BalanceMap` via `/ultra/v1/balances/{pubkey}`. Preserves public methods `getSolBalance(pk)` and `getTokenBalance(pk, mint)` for Story 3-1 preflight. SOL-balance call has a narrow RPC fallback (`connection.getBalance`) if Ultra errors. Token-balance is Ultra-only. Amended A-4. |
 
 #### Types & Config (src/types/, src/config/)
 
@@ -173,12 +175,30 @@ interface SwapResult {
 }
 
 interface TokenInfo {
-  mint: string;
-  symbol: string;
+  id: string;                    // base58 mint (Jupiter-native naming)
   name: string;
+  symbol: string;
+  icon?: string;                 // icon URL from Jupiter
   decimals: number;
-  logoURI?: string;
+  usdPrice?: number;
+  liquidity?: number;
+  isVerified?: boolean;
+  tags?: string[];               // "verified" | "lst" | "community" | "strict" | …
+  organicScore?: number;
+  organicScoreLabel?: "high" | "medium" | "low";
+  audit?: {
+    mintAuthorityDisabled?: boolean;
+    freezeAuthorityDisabled?: boolean;
+    topHoldersPercentage?: number;
+  };
 }
+
+// Amended A-2: expanded to Jupiter-native shape (supports trust badges, balance-sort, warning overlay).
+
+type BalanceMap = Record<
+  string,                        // mint id (key "SOL" for native SOL)
+  { uiAmount: number; rawAmount: string; decimals: number }
+>;
 ```
 
 ### State Machine
@@ -224,6 +244,7 @@ enum ErrorType {
   ExecutionTimeout = "ExecutionTimeout",       // AC-D-2: timeout
   TokenListError = "TokenListError",          // token list fetch failure
   BalanceCheckFailed = "BalanceCheckFailed",   // AC-A-2: RPC degradation
+  ConfigError = "ConfigError",                 // A-5: missing VITE_JUPITER_API_KEY for swap endpoints
   UnknownError = "UnknownError",
 }
 
@@ -255,25 +276,11 @@ class SwapError extends Error {
 
 ### Token Cache
 
-```typescript
-interface TokenCache {
-  verifiedTokens: TokenInfo[];      // top ~100-200 verified tokens
-  searchResults: Map<string, TokenInfo[]>; // API fallback results, max 500 entries (LRU eviction)
-  lastFetched: number;              // timestamp
-  ttl: number;                      // cache duration (e.g., 10 minutes)
-  maxSearchCacheEntries: number;    // default: 500 — prevents unbounded memory growth
-}
-```
+*Removed A-2.* TanStack Query owns token caching — no custom cache module. `useTokenSearch` hook governs staleTime (5 min for empty/blue-chip query, 30 s for text queries).
 
 ### Persisted State (localStorage)
 
-```typescript
-interface PersistedSwapPreferences {
-  inputMint: string | null;
-  outputMint: string | null;
-}
-// Key: "jupiter-swap-preferences"
-```
+*Removed A-3.* No cross-session persistence. App boots from `DEFAULT_INPUT_MINT` and `DEFAULT_OUTPUT_MINT` constants in `src/config/constants.ts`.
 
 ---
 
@@ -341,38 +348,45 @@ User clicks Swap
           State: Executing → Error (NetworkError)
 ```
 
-### Workflow 3: Token Search & Selection (UC-3, FR-3)
+### Workflow 3: Token Search & Selection (UC-3, FR-3) — Amended A-2, A-3, A-4
 
 ```
-App loads
-  → tokenService.initialize()
-      Fetch verified tokens from Jupiter Token API (~100-200 tokens)
-      Cache in memory (TokenCache)
-      Load persisted preferences from localStorage
-      If persisted tokens found → pre-select as input/output
+App mount
+  → Parent initializes inputMint = DEFAULT_INPUT_MINT (SOL),
+                       outputMint = DEFAULT_OUTPUT_MINT (USDC)
+    from src/config/constants.ts — no network call.
+    Full TokenInfo hydrates lazily on first selector open.
 
 User opens token selector
-  → Display cached verified tokens (instant)
+  → Modal mounts; useTokenSearch('') fires ONE call
+    GET /tokens/v2/search?query=   → blue-chip list (TanStack staleTime 5 min)
+  → Concurrently (if wallet connected): useWalletBalances() fires
+    GET /ultra/v1/balances/{pubkey} → BalanceMap (staleTime 30 s)
+  → Client-side merge + sort:
+      rows with uiAmount > 0 → top, sorted by (usdPrice × uiAmount) desc
+      remaining rows         → preserve Jupiter's server order
+  → Render virtualized list (react-window, itemSize 72)
 
 User types search query
-  → Debounce (200ms)
-  → Search cached verifiedTokens by symbol (case-insensitive) and mint
-  → If matches found → display matches
-  → If no matches and query length >= 3:
-      Query Jupiter Token API for search (with AbortController)
-      Display results with "searched" indicator
-  → If no matches anywhere → empty state message
+  → lodash.debounce(setSearch, 200) — debounces the setState
+  → Debounced value flows into queryKey ['jupiter-search', debouncedQuery]
+  → TanStack fires GET /tokens/v2/search?query={input}
+    (same endpoint handles symbol, name, OR mint address)
+  → Previous in-flight request aborts via queryKey-change signal
+  → Same balance merge + sort applies to new results
 
 User selects token
-  → Update input/output mint
-  → Persist to localStorage
-  → If both tokens and amount set → trigger quote fetch (Workflow 1)
-  → Validate: inputMint !== outputMint (else show error, don't fetch)
+  → Row click where token.id !== excludeMint
+    (if token.id === excludeMint, row renders aria-disabled; click is no-op)
+  → onSelect(token: TokenInfo) fires exactly once
+  → onOpenChange(false) closes modal
+  → Parent updates state; Story 2-1's debounced quote fetch triggers
+    automatically if both tokens + amount set (Workflow 1)
 
-Token cache refresh
-  → On app focus (visibilitychange event) if cache.lastFetched + cache.ttl < now
-  → Re-fetch verified tokens silently in background
-  → Merge into cache without disrupting current selection
+Base-URL policy (jupiterClient):
+  /tokens/v2/*  → api.jup.ag with key;  lite-api.jup.ag without key
+  /ultra/v1/*   → api.jup.ag with key;  lite-api.jup.ag without key
+  /swap/v2/*    → api.jup.ag with key;  ConfigError without key (A-5)
 ```
 
 ### Workflow 4: Error Recovery (UC-4, FR-9)
@@ -807,13 +821,16 @@ src/
 - Alternatives: CSS Modules (scoped, zero runtime — but more verbose), styled-components (CSS-in-JS, runtime cost — unnecessary for a template)
 - Rationale: Utility-first, excellent responsive support, small purged bundle. Industry standard for React templates.
 
-### DD-9: Jupiter Token API — hybrid fetch/cache [LOCKED]
-- Alternatives: Static curated list (no API dependency — but limited tokens), full list fetch (complete — but large payload), API-only search (always fresh — but slow UX)
-- Rationale: Fetch top ~100-200 verified tokens on load (instant search for popular tokens), API fallback for unknown tokens. Best UX/coverage balance for a production template.
+### DD-9: Jupiter Tokens API — TanStack Query live search [LOCKED, Amended A-2]
+- Superseded: previous "hybrid fetch/cache" with in-memory `TokenCache`, TTL, LRU, and visibilitychange refresh.
+- Alternatives considered: Static curated list (limited coverage), full verified-list fetch (large payload, no balance merge), hybrid cache (reinvents the data layer).
+- Decision: Single endpoint `GET /tokens/v2/search?query={input}` fronted by TanStack Query. Empty query returns Jupiter's server-curated blue-chip list. No client-side cache module. `useTokenSearch(query)` hook governs staleTime (5 min empty, 30 s text). Grounded in `jup-ag/plugin`'s production pattern.
+- Rationale: For a production-intent template, copying the real production pattern beats reinventing caching the data layer already provides.
 
-### DD-10: localStorage persistence [LOCKED]
-- Alternatives: No persistence (simpler — but worse UX on return visits)
-- Rationale: Small implementation cost. Users returning to the app expect to see their last token pair.
+### DD-10: localStorage persistence [RETIRED, Amended A-3]
+- Previously LOCKED; `spec.md` already marked the feature DEFERRED, creating an inconsistency.
+- Retired: no cross-session persistence of selected tokens. App boots from `DEFAULT_INPUT_MINT` / `DEFAULT_OUTPUT_MINT` constants in `src/config/constants.ts` on every session.
+- Rationale: Template consumers fork and customize defaults; persistence adds schema-migration risk with no material UX benefit in a demo context.
 
 ### DD-11: Vite [LOCKED]
 - Alternatives: Next.js (SSR/SSG overkill for pure SPA), CRA (deprecated, slow builds)
@@ -823,9 +840,11 @@ src/
 - Alternatives: Jest (works but slower, needs separate Vite config), Playwright (E2E — complementary, not primary)
 - Rationale: Native Vite integration. Same config, fast execution, Jest-compatible API.
 
-### DD-13: balanceService as separate service [LOCKED]
-- Alternatives: Inline RPC calls in preflightChecks (simpler — but harder to mock and no reuse)
-- Rationale: Isolates RPC dependency. Enables graceful degradation (AC-A-2). Testable independently.
+### DD-13: balanceService — Ultra-primary with narrow RPC fallback [LOCKED, Amended A-4]
+- Superseded: previous "RPC-only via `@solana/web3.js` Connection" design.
+- Alternatives considered: Ultra-only (single point of failure for preflight), keep RPC primary (no batched balance map for selector display; correlates N+1 calls), full fallback parity (doubles maintenance).
+- Decision: `getAllBalances(pubkey)` hits `GET /ultra/v1/balances/{pubkey}` primary. Public methods `getSolBalance` and `getTokenBalance` preserved for Story 3-1 consumers. `getSolBalance` falls back to `connection.getBalance(pubkey)` on Ultra error. `getTokenBalance` has no RPC fallback (N+1 cost). `useWalletBalances` hook shares the cache for selector display.
+- Rationale: One balance path for the whole app, batched and Token2022-aware. Narrow SOL-only fallback preserves the most critical preflight check during partial Ultra outages; full fallback parity gains little because Ultra and `/order` share failure modes.
 
 ### DD-14: Quote freshness via timestamp comparison [LOCKED]
 - Alternatives: Server-provided expiry (not available from Jupiter), WebSocket for live quotes (Jupiter doesn't offer this)

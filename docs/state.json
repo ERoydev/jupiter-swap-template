@@ -3,12 +3,20 @@
   "flow": "greenfield",
   "version": "next-2.0",
   "created": "2026-04-14T06:44:29.255Z",
-  "lastUpdated": "2026-04-20T12:15:00.000Z",
+  "lastUpdated": "2026-04-22T07:45:00.000Z",
   "currentPhase": "implement",
   "currentStep": null,
   "currentCheckpoint": null,
   "complexityTier": "high",
-  "currentStory": null,
+  "currentStory": {
+    "storyId": "2-2",
+    "slug": "token-service-token-selector",
+    "title": "Token Service + Token Selector UI",
+    "size": "M",
+    "wave": 2,
+    "status": "in-progress",
+    "startedAt": "2026-04-20T09:16:30.000Z"
+  },
   "phases": {
     "research": {
       "status": "complete",
@@ -101,7 +109,7 @@
       "avgTasksPerStory": 3.33,
       "sizeDistribution": {
         "S": 1,
-        "M": 2,
+        "M": 3,
         "L": 0
       }
     },
@@ -126,9 +134,9 @@
       "findingsDeferred": 6
     },
     "quality": {
-      "interfaceAudits": 2,
+      "interfaceAudits": 3,
       "interfaceMismatches": 0,
-      "amendments": 1,
+      "amendments": 5,
       "concerns": 2,
       "concernsBySeverity": {
         "critical": 0,
@@ -158,7 +166,7 @@
       }
     },
     "execution": {
-      "totalSessions": 3,
+      "totalSessions": 7,
       "pauseResumeCount": 2,
       "agentTeamsUsed": false,
       "parallelWaves": 0,
