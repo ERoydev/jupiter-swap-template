@@ -1,20 +1,23 @@
 export interface TokenInfo {
-  mint: string;
-  symbol: string;
+  id: string;
   name: string;
+  symbol: string;
+  icon?: string;
   decimals: number;
-  logoURI?: string;
+  usdPrice?: number;
+  liquidity?: number;
+  isVerified?: boolean;
+  tags?: string[];
+  organicScore?: number;
+  organicScoreLabel?: "high" | "medium" | "low";
+  audit?: {
+    mintAuthorityDisabled?: boolean;
+    freezeAuthorityDisabled?: boolean;
+    topHoldersPercentage?: number;
+  };
 }
 
-export interface TokenCache {
-  verifiedTokens: TokenInfo[];
-  searchResults: Map<string, TokenInfo[]>;
-  lastFetched: number;
-  ttl: number;
-  maxSearchCacheEntries: number;
-}
-
-export interface PersistedSwapPreferences {
-  inputMint: string | null;
-  outputMint: string | null;
-}
+export type BalanceMap = Record<
+  string,
+  { uiAmount: number; rawAmount: string; decimals: number }
+>;
