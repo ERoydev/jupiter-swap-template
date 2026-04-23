@@ -21,17 +21,12 @@ import { SwapState } from "./state/swapState";
 import { ErrorType, SwapError } from "./types/errors";
 import { SOLANA_RPC_URL } from "./config/env";
 import {
-    DEFAULT_INPUT_MINT,
-    DEFAULT_OUTPUT_MINT,
+    DEFAULT_INPUT_TOKEN,
+    DEFAULT_OUTPUT_TOKEN,
 } from "./config/constants";
+import type { TokenInfo } from "./types/tokens";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
-
-// Default display metadata for the pre-selected tokens (SOL → USDC)
-const DEFAULT_INPUT_SYMBOL = "SOL";
-const DEFAULT_OUTPUT_SYMBOL = "USDC";
-const DEFAULT_INPUT_DECIMALS = 9;
-const DEFAULT_OUTPUT_DECIMALS = 6;
 
 const DEBOUNCE_MS = 300;
 
@@ -43,8 +38,8 @@ export function SwapCard() {
     const abortControllerRef = useRef<AbortController | null>(null);
     const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const [inputMint, setInputMint] = useState<string>(DEFAULT_INPUT_MINT);
-    const [outputMint, setOutputMint] = useState<string>(DEFAULT_OUTPUT_MINT);
+    const [inputToken, setInputToken] = useState<TokenInfo>(DEFAULT_INPUT_TOKEN);
+    const [outputToken, setOutputToken] = useState<TokenInfo>(DEFAULT_OUTPUT_TOKEN);
     const [selectorSide, setSelectorSide] = useState<"input" | "output" | null>(null);
     const selectorOpen = selectorSide !== null;
 
@@ -69,8 +64,8 @@ export function SwapCard() {
             try {
                 const quote = await getOrder(
                     {
-                        inputMint: inputMint,
-                        outputMint: outputMint,
+                        inputMint: inputToken.id,
+                        outputMint: outputToken.id,
                         amount,
                         taker:
                             connected && publicKey
@@ -107,7 +102,7 @@ export function SwapCard() {
                 }
             }
         },
-        [connected, publicKey, dispatch, inputMint, outputMint],
+        [connected, publicKey, dispatch, inputToken.id, outputToken.id],
     );
 
     // Abort in-flight fetch when a TIMEOUT (or any error) transitions us to Error state
@@ -118,16 +113,18 @@ export function SwapCard() {
         }
     }, [context.state]);
 
-    // Refetch immediately when mints change (if amount is already set)
+    // Refetch immediately when tokens change (if amount is already set).
+    // Uses the CURRENT selected input token's decimals — not a hardcoded value —
+    // so picking BONK (5 decimals) produces correct lamports, not SOL-scaled lamports.
     useEffect(() => {
         if (!inputAmount || parseFloat(inputAmount) <= 0) return;
         if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
         const lamports = Math.floor(
-            parseFloat(inputAmount) * 10 ** DEFAULT_INPUT_DECIMALS,
+            parseFloat(inputAmount) * 10 ** inputToken.decimals,
         ).toString();
         fetchQuote(lamports);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [inputMint, outputMint]); // intentionally omit inputAmount + fetchQuote to avoid loops
+    }, [inputToken.id, outputToken.id, inputToken.decimals]); // intentionally omit inputAmount + fetchQuote to avoid loops
 
     const handleAmountChange = useCallback(
         (value: string) => {
@@ -142,16 +139,16 @@ export function SwapCard() {
                 return;
             }
 
-            // Convert to lamports (smallest unit)
+            // Convert to lamports (smallest unit) using the SELECTED input token's decimals
             const lamports = Math.floor(
-                parsed * 10 ** DEFAULT_INPUT_DECIMALS,
+                parsed * 10 ** inputToken.decimals,
             ).toString();
 
             debounceTimerRef.current = setTimeout(() => {
                 fetchQuote(lamports);
             }, DEBOUNCE_MS);
         },
-        [fetchQuote],
+        [fetchQuote, inputToken.decimals],
     );
 
     // Cleanup on unmount
@@ -190,7 +187,7 @@ export function SwapCard() {
                         onClick={() => setSelectorSide("input")}
                         className="text-sm font-medium h-auto py-1 px-2"
                     >
-                        From: {inputMint.slice(0, 4)}…{inputMint.slice(-4)}
+                        From: {inputToken.symbol}
                     </Button>
                 </div>
                 <input
@@ -200,7 +197,7 @@ export function SwapCard() {
                     onChange={(e) => handleAmountChange(e.target.value)}
                     placeholder="0.00"
                     className="w-full bg-transparent text-xl font-medium text-foreground outline-none placeholder:text-muted-foreground mt-1"
-                    aria-label={`Amount of ${DEFAULT_INPUT_SYMBOL} to swap`}
+                    aria-label={`Amount of ${inputToken.symbol} to swap`}
                 />
             </div>
 
@@ -216,14 +213,14 @@ export function SwapCard() {
                         onClick={() => setSelectorSide("output")}
                         className="text-sm font-medium h-auto py-1 px-2"
                     >
-                        To: {outputMint.slice(0, 4)}…{outputMint.slice(-4)}
+                        To: {outputToken.symbol}
                     </Button>
                 </div>
                 <div className="text-xl font-medium text-muted-foreground mt-1">
                     {hasQuote && context.quote
                         ? (
                               Number(context.quote.outAmount) /
-                              10 ** DEFAULT_OUTPUT_DECIMALS
+                              10 ** outputToken.decimals
                           ).toLocaleString(undefined, {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 4,
@@ -248,14 +245,14 @@ export function SwapCard() {
             {hasQuote && context.quote && (
                 <QuoteDisplay
                     quote={context.quote}
-                    inputSymbol={DEFAULT_INPUT_SYMBOL}
-                    outputSymbol={DEFAULT_OUTPUT_SYMBOL}
+                    inputSymbol={inputToken.symbol}
+                    outputSymbol={outputToken.symbol}
                     inputAmount={Math.floor(
                         parseFloat(inputAmount || "0") *
-                            10 ** DEFAULT_INPUT_DECIMALS,
+                            10 ** inputToken.decimals,
                     ).toString()}
-                    inputDecimals={DEFAULT_INPUT_DECIMALS}
-                    outputDecimals={DEFAULT_OUTPUT_DECIMALS}
+                    inputDecimals={inputToken.decimals}
+                    outputDecimals={outputToken.decimals}
                     quoteFetchedAt={context.quoteFetchedAt}
                 />
             )}
@@ -304,11 +301,11 @@ export function SwapCard() {
                 open={selectorOpen}
                 onOpenChange={(open) => !open && setSelectorSide(null)}
                 onSelect={(token) => {
-                    if (selectorSide === "input") setInputMint(token.id);
-                    else if (selectorSide === "output") setOutputMint(token.id);
+                    if (selectorSide === "input") setInputToken(token);
+                    else if (selectorSide === "output") setOutputToken(token);
                     setSelectorSide(null);
                 }}
-                excludeMint={selectorSide === "input" ? outputMint : inputMint}
+                excludeMint={selectorSide === "input" ? outputToken.id : inputToken.id}
             />
         </div>
     );

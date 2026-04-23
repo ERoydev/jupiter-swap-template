@@ -85,7 +85,6 @@ vi.mock("./ui/TokenSelector", () => ({
 
 // Must import after mocks are set up
 import { SwapCard } from "./App";
-import { DEFAULT_INPUT_MINT, DEFAULT_OUTPUT_MINT } from "./config/constants";
 
 // SwapCard uses useQueryClient for blue-chip prefetch — wrap in a provider.
 function renderSwap() {
@@ -228,7 +227,7 @@ describe("SwapCard — AC-2 debounce + AbortController", () => {
 });
 
 describe("SwapCard — AC-1 + AC-11 token selector integration", () => {
-  it("renders From and To token trigger buttons with default mints", () => {
+  it("renders From and To token trigger buttons with default token symbols", () => {
     renderSwap();
 
     const fromButton = screen.getByRole("button", { name: /Select input token/i });
@@ -237,9 +236,9 @@ describe("SwapCard — AC-1 + AC-11 token selector integration", () => {
     expect(fromButton).not.toBeNull();
     expect(toButton).not.toBeNull();
 
-    // Buttons show shortened mint addresses from the defaults
-    expect(fromButton.textContent).toContain(DEFAULT_INPUT_MINT.slice(0, 4));
-    expect(toButton.textContent).toContain(DEFAULT_OUTPUT_MINT.slice(0, 4));
+    // Buttons show token symbols (not mint slices) for human readability
+    expect(fromButton.textContent).toContain("SOL");
+    expect(toButton.textContent).toContain("USDC");
   });
 
   it("opens the token selector modal when the From button is clicked", async () => {
@@ -286,10 +285,9 @@ describe("SwapCard — AC-1 + AC-11 token selector integration", () => {
     // Modal should be closed
     expect(screen.queryByTestId("token-selector-modal")).toBeNull();
 
-    // From button should now show the BONK mint address
-    const bonkMint = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
+    // From button should now show the BONK symbol (not the mint address)
     const updatedFromButton = screen.getByRole("button", { name: /Select input token/i });
-    expect(updatedFromButton.textContent).toContain(bonkMint.slice(0, 4));
+    expect(updatedFromButton.textContent).toContain("BONK");
   });
 
   it("selecting a token from the To selector updates the output mint", async () => {
@@ -309,10 +307,9 @@ describe("SwapCard — AC-1 + AC-11 token selector integration", () => {
     // Modal closed
     expect(screen.queryByTestId("token-selector-modal")).toBeNull();
 
-    // To button now shows BONK mint
-    const bonkMint = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
+    // To button now shows BONK symbol
     const updatedToButton = screen.getByRole("button", { name: /Select output token/i });
-    expect(updatedToButton.textContent).toContain(bonkMint.slice(0, 4));
+    expect(updatedToButton.textContent).toContain("BONK");
   });
 
   it("refetches quote when mints change if amount is already set", async () => {
@@ -352,5 +349,51 @@ describe("SwapCard — AC-1 + AC-11 token selector integration", () => {
 
     // Mint change should trigger an immediate refetch (useEffect fires synchronously in test)
     expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  // Regression test for the critical decimals bug caught in code review.
+  // Previous implementation hardcoded decimals to 9 (SOL). Picking BONK (5 decimals)
+  // would cause a 10000× over-scaling of the swap amount — real fund loss risk.
+  it("uses the SELECTED input token's decimals when converting amount to lamports", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        transaction: null,
+        requestId: "r",
+        outAmount: "1000000",
+        router: "Metis",
+        mode: "ExactIn",
+        feeBps: 0,
+        feeMint: "x",
+      }),
+    });
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+
+    const { container } = renderSwap();
+
+    // First: type amount with default SOL (9 decimals) → expect 1e9
+    const input = container.querySelector("input") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "1" } });
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+    const firstCallUrl = String(fetchSpy.mock.calls[0]?.[0]);
+    expect(firstCallUrl).toContain("amount=1000000000"); // 1 * 10^9 lamports (SOL)
+
+    // Now pick BONK (5 decimals) via mock modal. The existing mock uses decimals: 5.
+    const fromButton = screen.getByRole("button", { name: /Select input token/i });
+    await act(async () => {
+      fireEvent.click(fromButton);
+    });
+    const pickBonk = screen.getByTestId("mock-pick-bonk");
+    await act(async () => {
+      fireEvent.click(pickBonk);
+    });
+
+    // The mint-change useEffect fires an immediate refetch with BONK's decimals.
+    // Expect: 1 * 10^5 = 100000, NOT 1 * 10^9 (which would be the bug).
+    const secondCallUrl = String(fetchSpy.mock.calls[1]?.[0]);
+    expect(secondCallUrl).toContain("amount=100000");       // correct (BONK 5 decimals)
+    expect(secondCallUrl).not.toContain("amount=1000000000"); // bug sentinel
   });
 });
