@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useWallet } from "@solana/wallet-adapter-react";
 import {
   Alert,
   AlertTitle,
@@ -28,8 +29,16 @@ import { useWalletBalances } from "../hooks/useWalletBalances";
  * Story 3-1 owns that concern via a disabled Swap button + Tooltip.
  */
 export function SolBalanceWarning() {
+  const { publicKey } = useWallet();
   const { isError, refetch, isFetching } = useWalletBalances();
   const [dismissed, setDismissed] = useState(false);
+
+  // Reset dismiss when the user reconnects a different wallet (AC-5, line 23
+  // of story 2-3). Without this, dismissing with wallet A silences the warning
+  // for wallet B on the same session — defeating the per-wallet safety intent.
+  useEffect(() => {
+    setDismissed(false);
+  }, [publicKey?.toBase58()]);
 
   if (!isError) return null;
   if (dismissed) return null;
@@ -44,6 +53,7 @@ export function SolBalanceWarning() {
           variant="outline"
           size="sm"
           aria-label="Retry SOL balance check"
+          aria-busy={isFetching}
           disabled={isFetching}
           onClick={() => void refetch()}
         >

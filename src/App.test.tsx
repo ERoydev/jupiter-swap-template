@@ -403,6 +403,19 @@ describe("SwapCard — AC-1 + AC-11 token selector integration", () => {
 });
 
 describe("SwapCard — AC-5 SolBalanceWarning integration", () => {
+  // Restore the default useWalletBalances mock before each case so mocks set by
+  // one test (e.g. isError:true) don't leak into siblings under test reordering.
+  beforeEach(() => {
+    vi.mocked(useWalletBalances).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn().mockResolvedValue(undefined),
+      isFetching: false,
+    });
+  });
+
   it("mounts SolBalanceWarning with default empty balance state without surfacing a fetch-failure alert", () => {
     // Default useWalletBalances mock: no error, no data. SolBalanceWarning renders null.
     renderSwap();

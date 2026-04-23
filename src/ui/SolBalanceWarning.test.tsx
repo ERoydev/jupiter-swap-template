@@ -11,6 +11,7 @@ import {
 } from "vitest";
 import { render, cleanup, fireEvent } from "@testing-library/react";
 import { SwapError, ErrorType } from "../types/errors";
+import type { useWalletBalances as UseWalletBalancesFn } from "../hooks/useWalletBalances";
 
 // ---------------------------------------------------------------------------
 // Module mocks — declared before any production imports
@@ -18,6 +19,16 @@ import { SwapError, ErrorType } from "../types/errors";
 vi.mock("../hooks/useWalletBalances", () => ({
   useWalletBalances: vi.fn(),
 }));
+
+vi.mock("@solana/wallet-adapter-react", () => ({
+  useWallet: vi.fn(() => ({ publicKey: null })),
+}));
+
+async function getMock_useWallet() {
+  return vi.mocked(
+    (await import("@solana/wallet-adapter-react")).useWallet,
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Lazy loaders (re-import each test to pick up fresh mock state)
@@ -33,30 +44,18 @@ async function getMock_useWalletBalances() {
   );
 }
 
-type HookReturn = {
-  data: ReturnType<
-    Awaited<ReturnType<typeof getMock_useWalletBalances>>
-  > extends never
-    ? never
-    : unknown;
-};
+type HookReturn = ReturnType<typeof UseWalletBalancesFn>;
 
-function makeHookReturn(overrides?: {
-  data?: unknown;
-  isLoading?: boolean;
-  isError?: boolean;
-  error?: Error | null;
-  refetch?: () => Promise<unknown>;
-  isFetching?: boolean;
-}) {
+function makeHookReturn(overrides?: Partial<HookReturn>): HookReturn {
   return {
-    data: overrides?.data ?? undefined,
-    isLoading: overrides?.isLoading ?? false,
-    isError: overrides?.isError ?? false,
-    error: overrides?.error ?? null,
-    refetch: overrides?.refetch ?? (vi.fn().mockResolvedValue(undefined)),
-    isFetching: overrides?.isFetching ?? false,
-  } as unknown as HookReturn;
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn().mockResolvedValue(undefined),
+    isFetching: false,
+    ...overrides,
+  };
 }
 
 beforeEach(() => {
@@ -81,7 +80,7 @@ describe("SolBalanceWarning — wallet disconnected", () => {
         error: null,
         refetch: vi.fn(),
         isFetching: false,
-      }) as never,
+      }),
     );
 
     const SolBalanceWarning = await loadComponent();
@@ -105,7 +104,7 @@ describe("SolBalanceWarning — loading state", () => {
         error: null,
         refetch: vi.fn(),
         isFetching: true,
-      }) as never,
+      }),
     );
 
     const SolBalanceWarning = await loadComponent();
@@ -131,7 +130,7 @@ describe("SolBalanceWarning — success state", () => {
         error: null,
         refetch: vi.fn(),
         isFetching: false,
-      }) as never,
+      }),
     );
 
     const SolBalanceWarning = await loadComponent();
@@ -160,7 +159,7 @@ describe("SolBalanceWarning — fetch failure state", () => {
         ),
         refetch: vi.fn().mockResolvedValue(undefined),
         isFetching: false,
-      }) as never,
+      }),
     );
 
     const SolBalanceWarning = await loadComponent();
@@ -204,7 +203,7 @@ describe("SolBalanceWarning — Retry Check behavior", () => {
         ),
         refetch,
         isFetching: false,
-      }) as never,
+      }),
     );
 
     const SolBalanceWarning = await loadComponent();
@@ -233,7 +232,7 @@ describe("SolBalanceWarning — Retry Check behavior", () => {
         ),
         refetch,
         isFetching: true,
-      }) as never,
+      }),
     );
     rerender(<SolBalanceWarning />);
 
@@ -264,7 +263,7 @@ describe("SolBalanceWarning — Proceed Without Verification dismiss", () => {
         ),
         refetch: vi.fn().mockResolvedValue(undefined),
         isFetching: false,
-      }) as never,
+      }),
     );
 
     const SolBalanceWarning = await loadComponent();
@@ -297,10 +296,64 @@ describe("SolBalanceWarning — Proceed Without Verification dismiss", () => {
         ),
         refetch: vi.fn().mockResolvedValue(undefined),
         isFetching: false,
-      }) as never,
+      }),
     );
     rerender(<SolBalanceWarning />);
 
     expect(queryByRole("alert")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7. Dismissed state resets when the user reconnects a different wallet
+// ---------------------------------------------------------------------------
+describe("SolBalanceWarning — dismiss resets on wallet change", () => {
+  it("re-shows the Alert after dismiss when publicKey changes", async () => {
+    const mockHook = await getMock_useWalletBalances();
+    const mockWallet = await getMock_useWallet();
+
+    // Only `toBase58` is read by SolBalanceWarning; cast suffices for the test.
+    const walletA = {
+      toBase58: () => "WALLET_A_11111111111111111111111111",
+    } as unknown as import("@solana/web3.js").PublicKey;
+    const walletB = {
+      toBase58: () => "WALLET_B_22222222222222222222222222",
+    } as unknown as import("@solana/web3.js").PublicKey;
+
+    mockWallet.mockReturnValue({
+      publicKey: walletA,
+    } as ReturnType<typeof mockWallet>);
+    mockHook.mockReturnValue(
+      makeHookReturn({
+        isError: true,
+        error: new SwapError(
+          ErrorType.BalanceCheckFailed,
+          "boom",
+          undefined,
+          true,
+        ),
+      }),
+    );
+
+    const SolBalanceWarning = await loadComponent();
+    const { getByLabelText, queryByRole, rerender } = render(
+      <SolBalanceWarning />,
+    );
+
+    // Wallet A: Alert visible, dismiss it
+    expect(queryByRole("alert")).not.toBeNull();
+    fireEvent.click(getByLabelText("Proceed without verifying SOL balance"));
+    expect(queryByRole("alert")).toBeNull();
+
+    // Still wallet A: Alert must STAY dismissed on re-render
+    rerender(<SolBalanceWarning />);
+    expect(queryByRole("alert")).toBeNull();
+
+    // User switches to wallet B (still isError:true): Alert must re-appear
+    mockWallet.mockReturnValue({
+      publicKey: walletB,
+    } as ReturnType<typeof mockWallet>);
+    rerender(<SolBalanceWarning />);
+    expect(queryByRole("alert")).not.toBeNull();
   });
 });
