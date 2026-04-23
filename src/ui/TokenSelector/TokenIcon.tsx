@@ -8,8 +8,17 @@ export interface TokenIconProps {
   size?: number;
 }
 
+// Only accept HTTPS icon URLs. Mixed-content (http://) would break in production
+// SPAs served over HTTPS, and javascript:/data: URIs — while harmless as <img src>
+// in browsers — have no business in a token registry. Skip straight to the SVG
+// fallback for anything else.
+function isSafeIconUrl(url: string | undefined): url is string {
+  return typeof url === "string" && url.startsWith("https://");
+}
+
 export function TokenIcon({ token, size = 56 }: TokenIconProps) {
-  const [tier, setTier] = useState<0 | 1 | 2>(token.icon ? 0 : 2);
+  const hasSafeIcon = isSafeIconUrl(token.icon);
+  const [tier, setTier] = useState<0 | 1 | 2>(hasSafeIcon ? 0 : 2);
 
   const showUnverifiedWarning =
     token.isVerified === false &&

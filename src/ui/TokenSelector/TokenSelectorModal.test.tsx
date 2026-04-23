@@ -466,9 +466,10 @@ describe("TokenSelectorModal — verified-only filter", () => {
     // Before toggle: unverified hidden
     expect(getBody().textContent).not.toContain("Scam USDC Copycat");
 
-    // Toggle on
+    // Toggle on — find the checkbox input inside the label (aria-label removed;
+    // the wrapping <label> provides the accessible name per a11y best practice)
     const toggle = getBody().querySelector(
-      'input[aria-label="Show unverified tokens"]',
+      'input[type="checkbox"]',
     ) as HTMLInputElement;
     expect(toggle).toBeTruthy();
     act(() => {

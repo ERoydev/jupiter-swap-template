@@ -144,7 +144,6 @@ function TokenListContent({
             checked={showUnverified}
             onChange={(e) => setShowUnverified(e.target.checked)}
             className="h-4 w-4 rounded border border-border accent-primary cursor-pointer"
-            aria-label="Show unverified tokens"
           />
           Show unverified tokens
         </label>
