@@ -90,7 +90,14 @@ function makeSearchResult(
 }
 
 function makeBalanceResult(data?: BalanceMap) {
-  return { data, isLoading: false, isError: false, error: null };
+  return {
+    data,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn().mockResolvedValue(undefined),
+    isFetching: false,
+  };
 }
 
 beforeEach(() => {
