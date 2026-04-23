@@ -175,3 +175,36 @@ Enables `git clone && npm run dev` to run out of the box for token browsing and 
 **Downstream impact:**
 - Story 2-1's `jupiterService.ts` is refactored to route through `jupiterClient` — previously made raw `fetch` calls with `requireEnv`-backed constants; now relies on `jupiterClient`'s gate for the `ConfigError` flow.
 - Story 3-3's error recovery must treat `ConfigError` as non-retryable and non-dismissible (setup problem, not transient).
+
+---
+
+## A-5 — 2026-04-23 — Story 2-3 AC-3 dropped (proactive low-SOL Alert → Story 3-1 button state)
+
+**Story:** 2-3 Balance Service + Proactive Warnings (pre-implementation)
+**Finding that caught it:** User review — industry norm (Raydium, Uniswap, PancakeSwap, jup-ag/plugin) is a disabled Swap button with contextual text ("Insufficient SOL"), not a separate banner Alert. Dual surfaces are noisy and redundant.
+**Rule:** 3 (Significant — scope narrowing; spec AC removed in favor of downstream story ownership)
+
+**Superseded LOCKED decision (spec AC-U-4 + plan AC-3 of Story 2-3):**
+- `SwapCard` renders a proactive warning Alert whenever `useWalletBalances` returns SOL `< 0.01` UI units: "You need at least 0.01 SOL for transaction fees."
+- Appears as soon as balances load, independent of user interaction (amount entered, tokens picked, Swap clicked).
+
+**Amended decision:**
+- AC-3 (proactive low-SOL Alert) is REMOVED from Story 2-3.
+- The insufficient-SOL signal is handled entirely by Story 3-1's pre-flight check: the Swap button becomes disabled with the label text "Insufficient SOL" (or equivalent) + Tooltip, per plan.md Story 3-1 AC-3.
+- Story 2-3 retains only AC-5 — the fetch-failure overlay when both Ultra and RPC fail. That surface has no button-text equivalent (Retry + Proceed-Without-Verification are distinct actions needing their own UI).
+- `MIN_SOL_BALANCE_UI = 0.01` (the new UI-units constant proposed in the story file) is NO LONGER added in 2-3. Story 3-1 decides its own unit convention when it implements the preflight check (may reuse existing `MIN_SOL_BALANCE` in lamports, or introduce a UI-units sibling — its choice).
+- `useWalletBalances` return-type extension (`refetch` + `isFetching`) STAYS — still required for AC-5's Retry button.
+
+**Why:**
+Raydium/Uniswap/PancakeSwap/jup-ag/plugin all use a single disabled-button surface for insufficient-balance states. A separate Alert duplicates information the user will see at swap time anyway and adds noise to the pre-swap flow. The fetch-failure case (both Ultra+RPC unavailable) is genuinely different — it's an infra/connectivity signal with its own action affordances (retry, proceed without verification), which cannot be collapsed into a button label. Keeping AC-5 preserves that distinction.
+
+**Files affected (vs. original story plan):**
+- `src/ui/SolBalanceWarning.tsx` — scoped down to the fetch-failure overlay only (no low-balance branch).
+- `src/config/constants.ts` — NO change (don't add `MIN_SOL_BALANCE_UI` in this story; Story 3-1 owns that decision).
+- `src/hooks/useWalletBalances.ts` — still extended with `refetch` + `isFetching` passthrough.
+- `src/App.tsx` — still mounts `<SolBalanceWarning />` (now a single-surface component).
+
+**Downstream impact:**
+- Story 3-1 must own the "Insufficient SOL" Swap-button state end to end. The existing plan AC (Story 3-1 AC-2 check #6 + AC-3) already covers this — no new 3-1 ACs needed.
+- Feature-inventory coverage for FR-11 check 6 (SOL preflight) now maps entirely to Story 3-1, not 2-3. The Feature Completeness Audit at the end of the feature should still pass because 3-1 covers it.
+- Renaming the story to "Balance Service Preflight Fetch-Failure Overlay" would be more accurate, but keeping the existing slug (`balance-service-proactive-warnings`) to avoid churning sprint-status.yaml / tags / commits. Story size S is preserved.

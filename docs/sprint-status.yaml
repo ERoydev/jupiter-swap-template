@@ -39,7 +39,7 @@ epics:
         slug: balance-service-proactive-warnings
         title: "Balance Service + Proactive Warnings"
         size: S
-        status: backlog
+        status: done
         wave: 2
         dependencies: ["1-2", "2-2"]
   - id: 3
