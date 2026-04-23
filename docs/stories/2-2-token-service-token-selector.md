@@ -116,30 +116,30 @@ type BalanceMap = Record<
 
 ## Tasks
 
-- [ ] **Task 1: `jupiterClient` + env refactor + QueryClientProvider**
+- [x] **Task 1: `jupiterClient` + env refactor + QueryClientProvider**
   - Maps to: AC-12 (lite-api fallback), transitively enables AC-2, AC-5, AC-6
   - Files: `src/services/jupiterClient.ts`, `src/services/jupiterClient.test.ts`, `src/config/env.ts` (modify), `src/main.tsx` (wrap in QueryClientProvider), `src/types/errors.ts` (add `ConfigError`), `src/services/jupiterService.ts` (modify — route through jupiterClient)
   - Deps to install: `@tanstack/react-query@^5`
   - Notes: `jupiterClient.get<T>(path, params?, signal?)` and `.post<T>(path, body, signal?)`. Base URL + auth header resolved per-call based on path prefix and key presence. Tests: key present → `api.jup.ag` + header; key absent + `/tokens/*` → `lite-api.jup.ag` no header; key absent + `/swap/*` → `ConfigError` thrown synchronously before fetch
 
-- [ ] **Task 2: types refresh + `tokenService` + `useTokenSearch`**
+- [x] **Task 2: types refresh + `tokenService` + `useTokenSearch`**
   - Maps to: AC-2, AC-3, AC-4, AC-5
   - Files: `src/types/tokens.ts` (rewrite — new `TokenInfo` + `BalanceMap`; remove `TokenCache`, `PersistedSwapPreferences`), `src/services/tokenService.ts`, `src/services/tokenService.test.ts`, `src/hooks/useTokenSearch.ts`, `src/hooks/useTokenSearch.test.ts`
   - Deps to install: `lodash.debounce` + `@types/lodash.debounce`
   - Notes: `tokenService.search(query, signal?)` → `Promise<TokenInfo[]>`, thin wrapper over `jupiterClient.get`. Hook uses `{ data, isLoading, isError, error, refetch }` shape. staleTime 5min for `query === ''`, 30s otherwise. Tests: empty-query blue-chip call; text query; cancellation on key change; staleTime assertions via `queryClient.getQueryState`
 
-- [ ] **Task 3: `balanceService` (Ultra + RPC fallback) + `useWalletBalances`**
+- [x] **Task 3: `balanceService` (Ultra + RPC fallback) + `useWalletBalances`**
   - Maps to: AC-6 (balance merge enables this)
   - Files: `src/services/balanceService.ts`, `src/services/balanceService.test.ts`, `src/hooks/useWalletBalances.ts`, `src/hooks/useWalletBalances.test.ts`
   - Notes: `balanceService.getAllBalances(pubkey, signal?)` → Ultra call returning `BalanceMap`. `balanceService.getSolBalance(pk)` → calls `getAllBalances` first; on Ultra failure, falls back to `connection.getBalance(pk)`. `balanceService.getTokenBalance(pk, mint)` → Ultra only (no fallback). Hook is `enabled: Boolean(publicKey)`. Tests: Ultra success; Ultra fail + RPC fallback for SOL; Ultra fail with no fallback for token mint; hook disabled when disconnected
 
-- [ ] **Task 4: `TokenSelectorModal` + row composition + icon fallback**
+- [x] **Task 4: `TokenSelectorModal` + row composition + icon fallback**
   - Maps to: AC-7, AC-8, AC-9, AC-10, AC-11
   - Files: `src/ui/TokenSelector/TokenSelectorModal.tsx`, `src/ui/TokenSelector/TokenRow.tsx`, `src/ui/TokenSelector/TokenIcon.tsx`, `src/ui/TokenSelector/TokenBadges.tsx`, `src/ui/TokenSelector/index.ts`, `src/lib/tokenIcon.ts` (wsrv.nl URL builder), `src/ui/TokenSelector/*.test.tsx`
   - Deps to install: `react-window@^1`, `@types/react-window`, `react-virtualized-auto-sizer@^1`
   - Notes: Modal props `{ open, onOpenChange, onSelect, excludeMint?, disabled? }`. `useIsMobile()` switches Dialog ↔ Drawer. Balance merge + sort runs in `useMemo` consuming both query hooks. Tests: per-state render (loading/error/empty/success); same-token guard disables row + blocks onClick; onSelect fires exactly once; wsrv→raw→SVG fallback chain triggers on sequential `onError`
 
-- [ ] **Task 5: App integration + default mints + Story 2-1 adapter**
+- [x] **Task 5: App integration + default mints + Story 2-1 adapter**
   - Maps to: AC-1, AC-11 (selection triggers Story 2-1 quote flow)
   - Files: `src/config/constants.ts` (add `DEFAULT_INPUT_MINT`, `DEFAULT_OUTPUT_MINT`), `src/App.tsx` (modify — render `TokenSelectorModal` trigger buttons, pass `excludeMint`, wire `onSelect` into existing swap state dispatch), `src/App.test.tsx` (extend)
   - Notes: On mount, parent initializes `inputMint = DEFAULT_INPUT_MINT`, `outputMint = DEFAULT_OUTPUT_MINT` without any fetch. Full `TokenInfo` objects for those two hydrate from the first `/search` call when the selector opens. If Story 2-1's reducer lacks `SET_INPUT_MINT` / `SET_OUTPUT_MINT` actions, add them with transition tests
