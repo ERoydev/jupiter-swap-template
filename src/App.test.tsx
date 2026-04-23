@@ -46,6 +46,8 @@ vi.mock("./hooks/useWalletBalances", () => ({
     isLoading: false,
     isError: false,
     error: null,
+    refetch: vi.fn().mockResolvedValue(undefined),
+    isFetching: false,
   })),
 }));
 
@@ -85,6 +87,8 @@ vi.mock("./ui/TokenSelector", () => ({
 
 // Must import after mocks are set up
 import { SwapCard } from "./App";
+import { useWalletBalances } from "./hooks/useWalletBalances";
+import { ErrorType, SwapError } from "./types/errors";
 
 // SwapCard uses useQueryClient for blue-chip prefetch — wrap in a provider.
 function renderSwap() {
@@ -395,5 +399,45 @@ describe("SwapCard — AC-1 + AC-11 token selector integration", () => {
     const secondCallUrl = String(fetchSpy.mock.calls[1]?.[0]);
     expect(secondCallUrl).toContain("amount=100000");       // correct (BONK 5 decimals)
     expect(secondCallUrl).not.toContain("amount=1000000000"); // bug sentinel
+  });
+});
+
+describe("SwapCard — AC-5 SolBalanceWarning integration", () => {
+  it("mounts SolBalanceWarning with default empty balance state without surfacing a fetch-failure alert", () => {
+    // Default useWalletBalances mock: no error, no data. SolBalanceWarning renders null.
+    renderSwap();
+
+    // No fetch-failure alert should be surfaced with "Unable to verify SOL balance"
+    const alerts = screen.queryAllByRole("alert");
+    const solWarningAlert = alerts.find((el) =>
+      el.textContent?.includes("Unable to verify SOL balance"),
+    );
+    expect(solWarningAlert).toBeUndefined();
+  });
+
+  it("renders the SOL balance fetch-failure Alert inside SwapCard when useWalletBalances.isError is true", () => {
+    vi.mocked(useWalletBalances).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new SwapError(
+        ErrorType.BalanceCheckFailed,
+        "Failed to fetch SOL balance from both Ultra and RPC",
+        undefined,
+        true,
+      ),
+      refetch: vi.fn().mockResolvedValue(undefined),
+      isFetching: false,
+    });
+
+    renderSwap();
+
+    // Scope to the fetch-failure surface via its distinctive text to avoid
+    // matching the quote-error alert (App.tsx ~line 265) that also uses role="alert".
+    // SolBalanceWarning renders synchronously when isError is true, so getByText is safe.
+    const warning = screen.getByText(/Unable to verify SOL balance/i);
+    const warningAlert = warning.closest('[role="alert"]');
+    expect(warningAlert).not.toBeNull();
+    expect(warningAlert?.textContent).toContain("Unable to verify SOL balance");
   });
 });

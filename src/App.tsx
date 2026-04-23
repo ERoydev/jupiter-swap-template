@@ -13,6 +13,7 @@ import { PhantomWalletAdapter } from "@solana/wallet-adapter-wallets";
 import { Button } from "@/components/ui/button";
 import { WalletButton } from "./ui/WalletButton";
 import { QuoteDisplay } from "./ui/QuoteDisplay";
+import { SolBalanceWarning } from "./ui/SolBalanceWarning";
 import { TokenSelectorModal } from "./ui/TokenSelector";
 import { useSwapState } from "./state/useSwapState";
 import { getOrder } from "./services/jupiterService";
@@ -228,6 +229,9 @@ export function SwapCard() {
                         : "0.00"}
                 </div>
             </div>
+
+            {/* SOL balance fetch-failure warning (AC-5) */}
+            <SolBalanceWarning />
 
             {/* Loading state */}
             {isLoading && (
