@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { act, render, cleanup, fireEvent } from "@testing-library/react";
+import { act, render, cleanup, fireEvent, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 // Mocks must be hoisted before the SwapCard import
 const mockUseWallet = vi.fn();
@@ -28,8 +29,75 @@ vi.mock("./ui/WalletButton", () => ({
 
 vi.mock("@solana/wallet-adapter-react-ui/styles.css", () => ({}));
 
+vi.mock("./hooks/useTokenSearch", () => ({
+  useTokenSearch: vi.fn(() => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  })),
+  prefetchBlueChipTokens: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("./hooks/useWalletBalances", () => ({
+  useWalletBalances: vi.fn(() => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    error: null,
+  })),
+}));
+
+// Mock TokenSelectorModal for App-wiring tests — keeps tests focused on App behaviour
+// Task 4 tests cover the modal's internals separately
+vi.mock("./ui/TokenSelector", () => ({
+  TokenSelectorModal: ({
+    open,
+    onSelect,
+    onOpenChange,
+  }: {
+    open: boolean;
+    onSelect: (token: { id: string; name: string; symbol: string; decimals: number }) => void;
+    onOpenChange: (open: boolean) => void;
+  }) => {
+    if (!open) return null;
+    return (
+      <div data-testid="token-selector-modal">
+        <button
+          data-testid="mock-pick-bonk"
+          onClick={() => {
+            onSelect({
+              id: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+              name: "Bonk",
+              symbol: "BONK",
+              decimals: 5,
+            });
+            onOpenChange(false);
+          }}
+        >
+          pick bonk
+        </button>
+      </div>
+    );
+  },
+}));
+
 // Must import after mocks are set up
 import { SwapCard } from "./App";
+import { DEFAULT_INPUT_MINT, DEFAULT_OUTPUT_MINT } from "./config/constants";
+
+// SwapCard uses useQueryClient for blue-chip prefetch — wrap in a provider.
+function renderSwap() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <SwapCard />
+    </QueryClientProvider>,
+  );
+}
 
 const originalFetch = globalThis.fetch;
 
@@ -48,7 +116,7 @@ afterEach(() => {
 
 describe("SwapCard — AC-7 quote-only (no wallet) mode", () => {
   it("renders a 'Connect Wallet' button when disconnected", () => {
-    const { container } = render(<SwapCard />);
+    const { container } = renderSwap();
     const button = container.querySelector(
       "button[aria-label='Connect Wallet']",
     );
@@ -57,7 +125,7 @@ describe("SwapCard — AC-7 quote-only (no wallet) mode", () => {
   });
 
   it("opens the wallet modal when the Connect Wallet button is clicked", () => {
-    const { container } = render(<SwapCard />);
+    const { container } = renderSwap();
     const button = container.querySelector(
       "button[aria-label='Connect Wallet']",
     ) as HTMLButtonElement;
@@ -66,7 +134,7 @@ describe("SwapCard — AC-7 quote-only (no wallet) mode", () => {
   });
 
   it("does NOT render a Swap button when disconnected", () => {
-    const { container } = render(<SwapCard />);
+    const { container } = renderSwap();
     expect(
       container.querySelector("button[aria-label='Swap tokens']"),
     ).toBeNull();
@@ -89,7 +157,7 @@ describe("SwapCard — AC-2 debounce + AbortController", () => {
     });
     globalThis.fetch = fetchSpy as unknown as typeof fetch;
 
-    const { container } = render(<SwapCard />);
+    const { container } = renderSwap();
     const input = container.querySelector("input") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "1" } });
     // Before debounce elapses, no fetch
@@ -111,7 +179,7 @@ describe("SwapCard — AC-2 debounce + AbortController", () => {
     });
     globalThis.fetch = fetchSpy as unknown as typeof fetch;
 
-    const { container } = render(<SwapCard />);
+    const { container } = renderSwap();
     const input = container.querySelector("input") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "1" } });
 
@@ -137,7 +205,7 @@ describe("SwapCard — AC-2 debounce + AbortController", () => {
     });
     globalThis.fetch = fetchSpy as unknown as typeof fetch;
 
-    const { container } = render(<SwapCard />);
+    const { container } = renderSwap();
     const input = container.querySelector("input") as HTMLInputElement;
 
     // First input → wait for debounce to fire fetch
@@ -156,5 +224,133 @@ describe("SwapCard — AC-2 debounce + AbortController", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(abortedSignals[0]?.aborted).toBe(true);
     expect(abortedSignals[1]?.aborted).toBe(false);
+  });
+});
+
+describe("SwapCard — AC-1 + AC-11 token selector integration", () => {
+  it("renders From and To token trigger buttons with default mints", () => {
+    renderSwap();
+
+    const fromButton = screen.getByRole("button", { name: /Select input token/i });
+    const toButton = screen.getByRole("button", { name: /Select output token/i });
+
+    expect(fromButton).not.toBeNull();
+    expect(toButton).not.toBeNull();
+
+    // Buttons show shortened mint addresses from the defaults
+    expect(fromButton.textContent).toContain(DEFAULT_INPUT_MINT.slice(0, 4));
+    expect(toButton.textContent).toContain(DEFAULT_OUTPUT_MINT.slice(0, 4));
+  });
+
+  it("opens the token selector modal when the From button is clicked", async () => {
+    renderSwap();
+
+    const fromButton = screen.getByRole("button", { name: /Select input token/i });
+
+    await act(async () => {
+      fireEvent.click(fromButton);
+    });
+
+    expect(screen.getByTestId("token-selector-modal")).not.toBeNull();
+  });
+
+  it("opens the token selector modal when the To button is clicked", async () => {
+    renderSwap();
+
+    const toButton = screen.getByRole("button", { name: /Select output token/i });
+
+    await act(async () => {
+      fireEvent.click(toButton);
+    });
+
+    expect(screen.getByTestId("token-selector-modal")).not.toBeNull();
+  });
+
+  it("selecting a token from the modal updates the From mint and closes the modal", async () => {
+    renderSwap();
+
+    // Open input selector
+    const fromButton = screen.getByRole("button", { name: /Select input token/i });
+    await act(async () => {
+      fireEvent.click(fromButton);
+    });
+
+    expect(screen.getByTestId("token-selector-modal")).not.toBeNull();
+
+    // Select BONK via the mock modal
+    const pickBonk = screen.getByTestId("mock-pick-bonk");
+    await act(async () => {
+      fireEvent.click(pickBonk);
+    });
+
+    // Modal should be closed
+    expect(screen.queryByTestId("token-selector-modal")).toBeNull();
+
+    // From button should now show the BONK mint address
+    const bonkMint = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
+    const updatedFromButton = screen.getByRole("button", { name: /Select input token/i });
+    expect(updatedFromButton.textContent).toContain(bonkMint.slice(0, 4));
+  });
+
+  it("selecting a token from the To selector updates the output mint", async () => {
+    renderSwap();
+
+    // Open output selector
+    const toButton = screen.getByRole("button", { name: /Select output token/i });
+    await act(async () => {
+      fireEvent.click(toButton);
+    });
+
+    const pickBonk = screen.getByTestId("mock-pick-bonk");
+    await act(async () => {
+      fireEvent.click(pickBonk);
+    });
+
+    // Modal closed
+    expect(screen.queryByTestId("token-selector-modal")).toBeNull();
+
+    // To button now shows BONK mint
+    const bonkMint = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
+    const updatedToButton = screen.getByRole("button", { name: /Select output token/i });
+    expect(updatedToButton.textContent).toContain(bonkMint.slice(0, 4));
+  });
+
+  it("refetches quote when mints change if amount is already set", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        transaction: null,
+        requestId: "r",
+        outAmount: "1000000",
+        router: "Metis",
+        mode: "ExactIn",
+        feeBps: 0,
+        feeMint: "x",
+      }),
+    });
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+
+    const { container } = renderSwap();
+
+    // Set an amount and wait for the debounced fetch
+    const input = container.querySelector("input") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "1" } });
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    // Open and change the input token
+    const fromButton = screen.getByRole("button", { name: /Select input token/i });
+    await act(async () => {
+      fireEvent.click(fromButton);
+    });
+    const pickBonk = screen.getByTestId("mock-pick-bonk");
+    await act(async () => {
+      fireEvent.click(pickBonk);
+    });
+
+    // Mint change should trigger an immediate refetch (useEffect fires synchronously in test)
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 });

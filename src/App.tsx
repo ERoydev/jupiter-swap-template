@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
     ConnectionProvider,
     WalletProvider,
@@ -12,17 +13,21 @@ import { PhantomWalletAdapter } from "@solana/wallet-adapter-wallets";
 import { Button } from "@/components/ui/button";
 import { WalletButton } from "./ui/WalletButton";
 import { QuoteDisplay } from "./ui/QuoteDisplay";
+import { TokenSelectorModal } from "./ui/TokenSelector";
 import { useSwapState } from "./state/useSwapState";
 import { getOrder } from "./services/jupiterService";
+import { prefetchBlueChipTokens } from "./hooks/useTokenSearch";
 import { SwapState } from "./state/swapState";
 import { ErrorType, SwapError } from "./types/errors";
 import { SOLANA_RPC_URL } from "./config/env";
+import {
+    DEFAULT_INPUT_MINT,
+    DEFAULT_OUTPUT_MINT,
+} from "./config/constants";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
 
-// Default tokens for demo (SOL → USDC)
-const DEFAULT_INPUT_MINT = "So11111111111111111111111111111111111111112";
-const DEFAULT_OUTPUT_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+// Default display metadata for the pre-selected tokens (SOL → USDC)
 const DEFAULT_INPUT_SYMBOL = "SOL";
 const DEFAULT_OUTPUT_SYMBOL = "USDC";
 const DEFAULT_INPUT_DECIMALS = 9;
@@ -38,6 +43,19 @@ export function SwapCard() {
     const abortControllerRef = useRef<AbortController | null>(null);
     const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+    const [inputMint, setInputMint] = useState<string>(DEFAULT_INPUT_MINT);
+    const [outputMint, setOutputMint] = useState<string>(DEFAULT_OUTPUT_MINT);
+    const [selectorSide, setSelectorSide] = useState<"input" | "output" | null>(null);
+    const selectorOpen = selectorSide !== null;
+
+    // Warm Jupiter's blue-chip token list into TanStack's cache on mount so the
+    // first time the user opens the selector, tokens appear instantly instead
+    // of briefly showing skeleton rows.
+    const queryClient = useQueryClient();
+    useEffect(() => {
+        void prefetchBlueChipTokens(queryClient);
+    }, [queryClient]);
+
     const fetchQuote = useCallback(
         async (amount: string) => {
             if (abortControllerRef.current) {
@@ -51,8 +69,8 @@ export function SwapCard() {
             try {
                 const quote = await getOrder(
                     {
-                        inputMint: DEFAULT_INPUT_MINT,
-                        outputMint: DEFAULT_OUTPUT_MINT,
+                        inputMint: inputMint,
+                        outputMint: outputMint,
                         amount,
                         taker:
                             connected && publicKey
@@ -89,7 +107,7 @@ export function SwapCard() {
                 }
             }
         },
-        [connected, publicKey, dispatch],
+        [connected, publicKey, dispatch, inputMint, outputMint],
     );
 
     // Abort in-flight fetch when a TIMEOUT (or any error) transitions us to Error state
@@ -99,6 +117,17 @@ export function SwapCard() {
             abortControllerRef.current = null;
         }
     }, [context.state]);
+
+    // Refetch immediately when mints change (if amount is already set)
+    useEffect(() => {
+        if (!inputAmount || parseFloat(inputAmount) <= 0) return;
+        if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+        const lamports = Math.floor(
+            parseFloat(inputAmount) * 10 ** DEFAULT_INPUT_DECIMALS,
+        ).toString();
+        fetchQuote(lamports);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [inputMint, outputMint]); // intentionally omit inputAmount + fetchQuote to avoid loops
 
     const handleAmountChange = useCallback(
         (value: string) => {
@@ -155,9 +184,14 @@ export function SwapCard() {
                     <span className="text-xs text-muted-foreground">
                         You pay
                     </span>
-                    <span className="text-sm font-medium">
-                        {DEFAULT_INPUT_SYMBOL}
-                    </span>
+                    <Button
+                        variant="outline"
+                        aria-label="Select input token"
+                        onClick={() => setSelectorSide("input")}
+                        className="text-sm font-medium h-auto py-1 px-2"
+                    >
+                        From: {inputMint.slice(0, 4)}…{inputMint.slice(-4)}
+                    </Button>
                 </div>
                 <input
                     type="text"
@@ -176,9 +210,14 @@ export function SwapCard() {
                     <span className="text-xs text-muted-foreground">
                         You receive
                     </span>
-                    <span className="text-sm font-medium">
-                        {DEFAULT_OUTPUT_SYMBOL}
-                    </span>
+                    <Button
+                        variant="outline"
+                        aria-label="Select output token"
+                        onClick={() => setSelectorSide("output")}
+                        className="text-sm font-medium h-auto py-1 px-2"
+                    >
+                        To: {outputMint.slice(0, 4)}…{outputMint.slice(-4)}
+                    </Button>
                 </div>
                 <div className="text-xl font-medium text-muted-foreground mt-1">
                     {hasQuote && context.quote
@@ -259,6 +298,18 @@ export function SwapCard() {
                     Swap
                 </button>
             )}
+
+            {/* Token selector modal — single instance, side switches via selectorSide state */}
+            <TokenSelectorModal
+                open={selectorOpen}
+                onOpenChange={(open) => !open && setSelectorSide(null)}
+                onSelect={(token) => {
+                    if (selectorSide === "input") setInputMint(token.id);
+                    else if (selectorSide === "output") setOutputMint(token.id);
+                    setSelectorSide(null);
+                }}
+                excludeMint={selectorSide === "input" ? outputMint : inputMint}
+            />
         </div>
     );
 }

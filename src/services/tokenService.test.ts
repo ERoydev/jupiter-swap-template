@@ -65,7 +65,7 @@ describe("tokenService.search — empty query (blue-chip seed)", () => {
     expect(client.get).toHaveBeenCalledOnce();
     expect(client.get).toHaveBeenCalledWith(
       "/tokens/v2/search",
-      { query: "" },
+      { query: "", limit: 50 },
       undefined,
     );
     expect(result).toHaveLength(1);
@@ -85,7 +85,7 @@ describe("tokenService.search — text query with signal", () => {
     expect(client.get).toHaveBeenCalledOnce();
     expect(client.get).toHaveBeenCalledWith(
       "/tokens/v2/search",
-      { query: "USDC" },
+      { query: "USDC", limit: 50 },
       ctrl.signal,
     );
     expect(result[0]!.symbol).toBe("SOL");

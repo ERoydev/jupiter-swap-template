@@ -139,6 +139,37 @@ describe("useTokenSearch — staleTime prevents redundant fetches", () => {
   });
 });
 
+describe("useTokenSearch — minimum text query length gate", () => {
+  it("does NOT fetch when query is exactly 1 character", async () => {
+    const svc = await loadMockTokenService();
+    vi.mocked(svc.search).mockResolvedValue([MOCK_TOKEN]);
+
+    const useTokenSearch = await loadHook();
+    const { result } = renderHook(() => useTokenSearch("U"), {
+      wrapper: createWrapper(),
+    });
+
+    // Give React a microtask to settle — query should be disabled
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(svc.search).not.toHaveBeenCalled();
+    expect(result.current.data).toBeUndefined();
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  it("fetches when query reaches 2 characters", async () => {
+    const svc = await loadMockTokenService();
+    vi.mocked(svc.search).mockResolvedValue([MOCK_TOKEN]);
+
+    const useTokenSearch = await loadHook();
+    const { result } = renderHook(() => useTokenSearch("US"), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.data).toBeDefined());
+    expect(svc.search).toHaveBeenCalledWith("US", expect.anything());
+  });
+});
+
 describe("useTokenSearch — error surfaces correctly", () => {
   it("returns isError: true and error set to the SwapError when service rejects", async () => {
     const svc = await loadMockTokenService();

@@ -1,6 +1,12 @@
 import { jupiterClient } from "./jupiterClient";
 import type { TokenInfo } from "../types/tokens";
 
+// Max tokens to request from Jupiter's search endpoint.
+// Jupiter's empty-query form returns its curated blue-chip list; the `limit`
+// param requests up to N entries. Text searches rarely exceed 50 matches.
+// Template consumers can tune this single constant to control picker density.
+const SEARCH_LIMIT = 50;
+
 function parseAudit(
   raw: Record<string, unknown>,
 ): TokenInfo["audit"] | undefined {
@@ -71,7 +77,7 @@ export const tokenService = {
   async search(query: string, signal?: AbortSignal): Promise<TokenInfo[]> {
     const raw = await jupiterClient.get<Record<string, unknown>[]>(
       "/tokens/v2/search",
-      { query },
+      { query, limit: SEARCH_LIMIT },
       signal,
     );
     return raw.map(parseTokenInfo);

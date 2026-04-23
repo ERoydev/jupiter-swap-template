@@ -365,7 +365,123 @@ describe("TokenSelectorModal — balance merge and sort", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 11. Mobile → Drawer branch renders
+// 11. Verified-only filter (default) + "Show unverified" toggle
+// ---------------------------------------------------------------------------
+describe("TokenSelectorModal — verified-only filter", () => {
+  const UNVERIFIED: TokenInfo = {
+    id: "ScamXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+    name: "Scam USDC Copycat",
+    symbol: "USDC",
+    decimals: 6,
+    isVerified: false,
+  };
+
+  it("hides unverified tokens by default", async () => {
+    (await getMock_useIsMobile()).mockReturnValue(false);
+    (await getMock_useTokenSearch()).mockReturnValue(
+      makeSearchResult([TOKEN_A, UNVERIFIED]),
+    );
+    (await getMock_useWalletBalances()).mockReturnValue(makeBalanceResult());
+
+    const TokenSelectorModal = await loadModal();
+    render(
+      <div style={{ height: 600, width: 400 }}>
+        <TokenSelectorModal open={true} onOpenChange={vi.fn()} onSelect={vi.fn()} />
+      </div>,
+    );
+
+    const rows = getBody().querySelectorAll('[role="option"]');
+    expect(rows.length).toBe(1);
+    expect(rows[0]!.textContent).toContain("USD Coin");
+    // Scam copycat must NOT be in the DOM
+    expect(getBody().textContent).not.toContain("Scam USDC Copycat");
+  });
+
+  it("keeps unverified tokens the user HOLDS visible (held bypass)", async () => {
+    (await getMock_useIsMobile()).mockReturnValue(false);
+    (await getMock_useTokenSearch()).mockReturnValue(
+      makeSearchResult([TOKEN_A, UNVERIFIED]),
+    );
+    const balances: BalanceMap = {
+      [UNVERIFIED.id]: { uiAmount: 1, rawAmount: "1000000", decimals: 6 },
+    };
+    (await getMock_useWalletBalances()).mockReturnValue(makeBalanceResult(balances));
+
+    const TokenSelectorModal = await loadModal();
+    render(
+      <div style={{ height: 600, width: 400 }}>
+        <TokenSelectorModal open={true} onOpenChange={vi.fn()} onSelect={vi.fn()} />
+      </div>,
+    );
+
+    // Held unverified token should appear (even though isVerified === false)
+    expect(getBody().textContent).toContain("Scam USDC Copycat");
+    // Verified token still visible
+    expect(getBody().textContent).toContain("USD Coin");
+  });
+
+  it("bypasses the filter when the user pastes a mint-like string (base58, 32+ chars)", async () => {
+    vi.useFakeTimers();
+    (await getMock_useIsMobile()).mockReturnValue(false);
+    (await getMock_useTokenSearch()).mockReturnValue(
+      makeSearchResult([UNVERIFIED]),
+    );
+    (await getMock_useWalletBalances()).mockReturnValue(makeBalanceResult());
+
+    const TokenSelectorModal = await loadModal();
+    render(
+      <div style={{ height: 600, width: 400 }}>
+        <TokenSelectorModal open={true} onOpenChange={vi.fn()} onSelect={vi.fn()} />
+      </div>,
+    );
+
+    // Simulate user pasting a mint-like string (matches UNVERIFIED.id length/shape)
+    const input = getBody().querySelector(
+      'input[aria-label="Search tokens"]',
+    ) as HTMLInputElement;
+    act(() => {
+      fireEvent.change(input, { target: { value: UNVERIFIED.id } });
+      vi.advanceTimersByTime(250); // flush debounce
+    });
+
+    // Unverified token should now be visible because the query is mint-shaped
+    expect(getBody().textContent).toContain("Scam USDC Copycat");
+    vi.useRealTimers();
+  });
+
+  it("shows unverified tokens after the user toggles 'Show unverified'", async () => {
+    (await getMock_useIsMobile()).mockReturnValue(false);
+    (await getMock_useTokenSearch()).mockReturnValue(
+      makeSearchResult([TOKEN_A, UNVERIFIED]),
+    );
+    (await getMock_useWalletBalances()).mockReturnValue(makeBalanceResult());
+
+    const TokenSelectorModal = await loadModal();
+    render(
+      <div style={{ height: 600, width: 400 }}>
+        <TokenSelectorModal open={true} onOpenChange={vi.fn()} onSelect={vi.fn()} />
+      </div>,
+    );
+
+    // Before toggle: unverified hidden
+    expect(getBody().textContent).not.toContain("Scam USDC Copycat");
+
+    // Toggle on
+    const toggle = getBody().querySelector(
+      'input[aria-label="Show unverified tokens"]',
+    ) as HTMLInputElement;
+    expect(toggle).toBeTruthy();
+    act(() => {
+      fireEvent.click(toggle);
+    });
+
+    // After toggle: unverified visible
+    expect(getBody().textContent).toContain("Scam USDC Copycat");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 12. Mobile → Drawer branch renders
 // ---------------------------------------------------------------------------
 describe("TokenSelectorModal — mobile Drawer", () => {
   it("renders Select Token heading via Drawer when useIsMobile returns true", async () => {

@@ -14,6 +14,14 @@ import { cn } from "@/lib/utils";
 
 export type MergedToken = TokenInfo & { _balance?: number; _usdValue?: number };
 
+// Solana mint addresses are base58-encoded public keys, 32–44 characters long.
+// When the user pastes a string that matches this shape, they clearly know which
+// token they want — skip the verified filter for that query.
+const MINT_LIKE_REGEX = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+function isMintLikeQuery(q: string): boolean {
+  return MINT_LIKE_REGEX.test(q);
+}
+
 export interface TokenSelectorModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -42,6 +50,7 @@ function TokenListContent({
 }: TokenSelectorModalProps) {
   const [searchInput, setSearchInput] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [showUnverified, setShowUnverified] = useState(false);
 
   const debouncedSetter = useMemo(
     () => debounce((value: string) => setDebouncedQuery(value), 200),
@@ -50,11 +59,12 @@ function TokenListContent({
 
   useEffect(() => () => debouncedSetter.cancel(), [debouncedSetter]);
 
-  // Reset search when modal closes
+  // Reset search + filter state when modal closes so each open starts safe
   useEffect(() => {
     if (!open) {
       setSearchInput("");
       setDebouncedQuery("");
+      setShowUnverified(false);
     }
   }, [open]);
 
@@ -63,7 +73,12 @@ function TokenListContent({
     debouncedSetter(e.target.value);
   };
 
-  const { data: tokens, isLoading, isError, error, refetch } = useTokenSearch(debouncedQuery);
+  // When the user has typed fewer than 2 chars (but not zero), fall back to the
+  // blue-chip seed list so the UI shows meaningful defaults instead of "No tokens
+  // found". The hook itself also gates single-char queries — this mapping keeps
+  // the render side clean by reusing the cached empty-query results.
+  const effectiveQuery = debouncedQuery.length >= 2 ? debouncedQuery : "";
+  const { data: tokens, isLoading, isError, error, refetch } = useTokenSearch(effectiveQuery);
   const { data: balances } = useWalletBalances();
 
   const mergedAndSorted = useMemo(() => {
@@ -91,6 +106,18 @@ function TokenListContent({
     });
   }, [tokens, balances]);
 
+  // Verified-only by default. Three bypass conditions:
+  //   1. "Show unverified" toggle is ON (explicit opt-in)
+  //   2. The query looks like a mint address (power user pasted an exact mint)
+  //   3. The user already holds the token (per-token bypass below)
+  const displayTokens = useMemo(() => {
+    if (showUnverified || isMintLikeQuery(debouncedQuery)) return mergedAndSorted;
+    return mergedAndSorted.filter((t) => {
+      if ((t._balance ?? 0) > 0) return true;
+      return t.isVerified === true || t.tags?.includes("verified") === true;
+    });
+  }, [mergedAndSorted, showUnverified, debouncedQuery]);
+
   const handleSelect = (token: TokenInfo) => {
     onSelect(token);
     onOpenChange(false);
@@ -100,7 +127,7 @@ function TokenListContent({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="px-4 pt-2 pb-3">
+      <div className="px-4 pt-2 pb-3 space-y-2">
         <Input
           aria-label="Search tokens"
           placeholder="Search by name, symbol, or mint"
@@ -110,9 +137,20 @@ function TokenListContent({
             "w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-ring",
           )}
         />
+        {/* py-2 + text-sm gives ~40px vertical tap target — meets mobile 44px guideline */}
+        <label className="flex items-center gap-2 py-2 text-sm text-muted-foreground cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={showUnverified}
+            onChange={(e) => setShowUnverified(e.target.checked)}
+            className="h-4 w-4 rounded border border-border accent-primary cursor-pointer"
+            aria-label="Show unverified tokens"
+          />
+          Show unverified tokens
+        </label>
       </div>
 
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 overflow-hidden">
         {isLoading ? (
           <div role="status" aria-label="Loading tokens">
             {skeletonRows.map((i) => (
@@ -135,16 +173,16 @@ function TokenListContent({
               Retry
             </button>
           </div>
-        ) : mergedAndSorted.length === 0 ? (
+        ) : displayTokens.length === 0 ? (
           <div
             className="flex flex-col items-center justify-center h-full gap-2 p-6"
             role="status"
           >
             <p className="text-sm text-muted-foreground text-center">
               No tokens found
-              {debouncedQuery ? (
+              {effectiveQuery ? (
                 <span className="block text-xs mt-1">
-                  for &quot;{debouncedQuery}&quot;
+                  for &quot;{effectiveQuery}&quot;
                 </span>
               ) : null}
             </p>
@@ -155,12 +193,12 @@ function TokenListContent({
               <FixedSizeList
                 height={height}
                 width={width}
-                itemCount={mergedAndSorted.length}
+                itemCount={displayTokens.length}
                 itemSize={72}
                 overscanCount={4}
               >
                 {({ index, style }) => {
-                  const token = mergedAndSorted[index];
+                  const token = displayTokens[index];
                   if (!token) return null;
                   return (
                     <TokenRow
