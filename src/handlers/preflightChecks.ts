@@ -4,6 +4,11 @@ import { isValidBase58PublicKey } from "../lib/publicKey";
 import { MIN_SOL_BALANCE_UI } from "../config/constants";
 import { ErrorType, SwapError } from "../types/errors";
 
+// A-8: native SOL lives under the literal "SOL" key in BalanceMap; the
+// wSOL mint address does not appear there. Check 7 aliases to
+// getSolBalance when the input is native SOL.
+const WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112";
+
 export interface PreflightParams {
   inputMint: string;
   outputMint: string;
@@ -98,11 +103,14 @@ export const preflightChecks = {
       );
     }
 
-    // 7. Enough input-token balance
-    const inputBalanceUi = await balanceService.getTokenBalance(
-      wallet.publicKey,
-      params.inputMint,
-    );
+    // 7. Enough input-token balance (A-8: wSOL aliases to native SOL)
+    const inputBalanceUi =
+      params.inputMint === WRAPPED_SOL_MINT
+        ? await balanceService.getSolBalance(wallet.publicKey)
+        : await balanceService.getTokenBalance(
+            wallet.publicKey,
+            params.inputMint,
+          );
     const amountUi = amountNum / 10 ** params.inputDecimals;
     if (inputBalanceUi < amountUi) {
       throw new SwapError(
