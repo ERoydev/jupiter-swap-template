@@ -8,7 +8,6 @@ export interface SwapButtonProps {
   state: SwapState;
   hasQuote: boolean;
   preflightError: SwapError | null;
-  connected: boolean;
   onClick: () => void;
 }
 
@@ -97,7 +96,6 @@ export function SwapButton({
   state,
   hasQuote,
   preflightError,
-  connected: _connected,
   onClick,
 }: SwapButtonProps) {
   const surface = deriveSurface(state, hasQuote, preflightError);

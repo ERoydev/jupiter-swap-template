@@ -519,7 +519,6 @@ export function SwapCard() {
                     state={context.state}
                     hasQuote={hasQuote}
                     preflightError={preflightError}
-                    connected={connected}
                     onClick={handleSwap}
                 />
             )}

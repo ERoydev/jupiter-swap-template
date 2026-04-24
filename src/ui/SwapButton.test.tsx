@@ -16,7 +16,6 @@ function noQuoteDefaults() {
     state: SwapState.Idle,
     hasQuote: false,
     preflightError: null,
-    connected: true,
     onClick: vi.fn(),
   };
 }
@@ -26,7 +25,6 @@ function passingDefaults() {
     state: SwapState.QuoteReady,
     hasQuote: true,
     preflightError: null,
-    connected: true,
     onClick: vi.fn(),
   };
 }
@@ -111,7 +109,6 @@ describe("SwapButton — preflight error labels", () => {
         state={SwapState.QuoteReady}
         hasQuote={true}
         preflightError={preflightError}
-        connected={true}
         onClick={vi.fn()}
       />,
     );
@@ -128,7 +125,6 @@ describe("SwapButton — in-flight states", () => {
         state={SwapState.Signing}
         hasQuote={true}
         preflightError={null}
-        connected={true}
         onClick={vi.fn()}
       />,
     );
@@ -143,7 +139,6 @@ describe("SwapButton — in-flight states", () => {
         state={SwapState.Executing}
         hasQuote={true}
         preflightError={null}
-        connected={true}
         onClick={vi.fn()}
       />,
     );
@@ -166,7 +161,6 @@ describe("SwapButton — accessibility", () => {
         state={SwapState.QuoteReady}
         hasQuote={true}
         preflightError={new SwapError(ErrorType.InsufficientSOL, "Low SOL")}
-        connected={true}
         onClick={vi.fn()}
       />,
     );

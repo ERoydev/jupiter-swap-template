@@ -55,8 +55,10 @@ export function SlippageSelector({ value, onChange }: SlippageSelectorProps) {
     function commitCustom() {
         const parsed = parseFloat(customDraft);
         if (!isValidCustomPercent(parsed)) {
-            setError("Enter 0.01–50");
-            // Blur without commit: revert UI to previous value, hide error.
+            // Invalid on commit — revert silently. The typing-time error
+            // already fired via handleInputChange's aria-alert; re-raising it
+            // here only to immediately clear it was a no-op that made role="alert"
+            // never announce.
             setEditingCustom(false);
             setError(null);
             return;
