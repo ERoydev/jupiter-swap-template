@@ -29,6 +29,15 @@ vi.mock("./ui/WalletButton", () => ({
 
 vi.mock("@solana/wallet-adapter-react-ui/styles.css", () => ({}));
 
+// Task 4 orchestration: mock handlers so tests can assert dispatch wiring
+// without needing real balance fetches or wallet signing infrastructure.
+vi.mock("./handlers/preflightChecks", () => ({
+  preflightChecks: { run: vi.fn().mockResolvedValue(undefined) },
+}));
+vi.mock("./handlers/transactionSigner", () => ({
+  transactionSigner: { sign: vi.fn().mockResolvedValue("signed-base64") },
+}));
+
 vi.mock("./hooks/useTokenSearch", () => ({
   useTokenSearch: vi.fn(() => ({
     data: undefined,
@@ -88,6 +97,8 @@ vi.mock("./ui/TokenSelector", () => ({
 // Must import after mocks are set up
 import { SwapCard } from "./App";
 import { useWalletBalances } from "./hooks/useWalletBalances";
+import { preflightChecks } from "./handlers/preflightChecks";
+import { transactionSigner } from "./handlers/transactionSigner";
 import { ErrorType, SwapError } from "./types/errors";
 
 // SwapCard uses useQueryClient for blue-chip prefetch — wrap in a provider.
@@ -452,5 +463,120 @@ describe("SwapCard — AC-5 SolBalanceWarning integration", () => {
     const warningAlert = warning.closest('[role="alert"]');
     expect(warningAlert).not.toBeNull();
     expect(warningAlert?.textContent).toContain("Unable to verify SOL balance");
+  });
+});
+
+// ─── Task 4: swap orchestration ──────────────────────────────────────────────
+
+const validQuoteResponse = {
+  transaction: "dummy-base64-tx",
+  requestId: "req-1",
+  outAmount: "1000000",
+  router: "Metis",
+  mode: "ExactIn",
+  feeBps: 0,
+  feeMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+};
+
+async function setupConnectedWithQuote() {
+  // Wallet connected with signTransaction available
+  mockUseWallet.mockReturnValue({
+    publicKey: {
+      toBase58: () => "So11111111111111111111111111111111111111112",
+    },
+    connected: true,
+    signTransaction: vi.fn(async (tx: unknown) => tx),
+  });
+
+  globalThis.fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => validQuoteResponse,
+  }) as unknown as typeof fetch;
+
+  const { container } = renderSwap();
+  const input = container.querySelector("input") as HTMLInputElement;
+  fireEvent.change(input, { target: { value: "1" } });
+
+  await act(async () => {
+    vi.advanceTimersByTime(300); // quote fetch debounce
+  });
+  // Let the quote-fetch promise resolve and dispatch QUOTE_RECEIVED
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  return container;
+}
+
+describe("SwapCard — Task 4 swap orchestration (AC-3-1-1, 3-1-5)", () => {
+  beforeEach(() => {
+    vi.mocked(preflightChecks.run).mockClear().mockResolvedValue(undefined);
+    vi.mocked(transactionSigner.sign).mockClear().mockResolvedValue("signed");
+  });
+
+  it("calls preflightChecks.run then transactionSigner.sign on Swap click (happy path)", async () => {
+    const container = await setupConnectedWithQuote();
+
+    // Swap button should be enabled after quote arrives + preflight debounce fires
+    await act(async () => {
+      vi.advanceTimersByTime(300); // preflight debounce
+      await Promise.resolve();
+    });
+
+    const swapBtn = container.querySelector(
+      "button[aria-label='Swap tokens']",
+    ) as HTMLButtonElement;
+    expect(swapBtn).not.toBeNull();
+
+    await act(async () => {
+      fireEvent.click(swapBtn);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // handleSwap runs: fresh preflight at click time + sign
+    // The debounced preflight effect may also fire — accept either 1 or 2 invocations.
+    expect(vi.mocked(preflightChecks.run).mock.calls.length).toBeGreaterThanOrEqual(1);
+    expect(vi.mocked(transactionSigner.sign)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(transactionSigner.sign).mock.calls[0]?.[0]).toBe(
+      validQuoteResponse.transaction,
+    );
+  });
+
+  it("dispatches PREFLIGHT_FAILED and skips signing when preflightChecks.run throws at click time", async () => {
+    const container = await setupConnectedWithQuote();
+
+    // Debounced preflight: pass (so button is enabled)
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      await Promise.resolve();
+    });
+
+    // Click-time preflight: throw
+    vi.mocked(preflightChecks.run).mockRejectedValueOnce(
+      new SwapError(ErrorType.InsufficientSOL, "You need at least 0.01 SOL for transaction fees"),
+    );
+
+    const swapBtn = container.querySelector(
+      "button[aria-label='Swap tokens']",
+    ) as HTMLButtonElement;
+
+    await act(async () => {
+      fireEvent.click(swapBtn);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // Signer must NOT be called when preflight throws
+    expect(vi.mocked(transactionSigner.sign)).not.toHaveBeenCalled();
+
+    // UI reflects Error state with the SwapError message
+    const errorAlerts = screen.queryAllByRole("alert");
+    const preflightErrAlert = errorAlerts.find((el) =>
+      el.textContent?.includes("You need at least 0.01 SOL"),
+    );
+    expect(preflightErrAlert).toBeDefined();
   });
 });

@@ -10,6 +10,7 @@ export const QUOTE_TIMEOUT_MS = 10_000;
 export const SIGNING_TIMEOUT_MS = 120_000;
 export const EXECUTING_TIMEOUT_MS = 60_000;
 export const STALE_THRESHOLD_MS = 30_000;
+export const QUOTE_REFRESH_INTERVAL_MS = 10_000;
 
 /**
  * Default token mints used on app boot before the user opens the selector.
