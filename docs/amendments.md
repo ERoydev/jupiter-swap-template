@@ -415,3 +415,57 @@ if (inputBalanceUi < amountUi) {
 
 **Follow-up (separate story, NOT this amendment):**
 - Promote the wSOL alias into `balanceService.getTokenBalance` so it returns native SOL for the wSOL mint automatically. Would let every consumer (preflight, fee estimator, any future handler) benefit without each one duplicating the special case. File this as a concerns.md item or a short CS story after 3-1 closes.
+
+> **Resolved by A-9 (2026-04-24).** The follow-up above is now closed — the alias lives at the service layer.
+
+---
+
+## A-9 — 2026-04-24 — wSOL alias moved to `balanceService.getTokenBalance` (post-3-1 review)
+
+**Story:** 3-1 Pre-flight Checks + Transaction Signing (post-merge review).
+**Finding that caught it:** Code review of PR #1 — "Value-key invariant belongs in balanceService, not preflight. A-8's wSOL alias is a caller-side patch for an invariant that balanceService owns. Every future caller will have to repeat this special case. Would also have caught the bug at the service layer's test."
+**Rule:** 3 (Significant — interface/contract change on a closed contract).
+
+**Original (A-8) LOCKED behavior:**
+- `balanceService.getTokenBalance(publicKey, wSOL_mint)` → returns `0` (the wSOL mint is not a key in Ultra's `BalanceMap`; native SOL sits under the literal key `"SOL"`).
+- Preflight check 7 works around this with a caller-side branch on `params.inputMint === WRAPPED_SOL_MINT`.
+
+**Amended behavior:**
+- `balanceService.getTokenBalance(publicKey, wSOL_mint)` → transparently delegates to `balanceService.getSolBalance(publicKey)`.
+- Preflight check 7 drops the special case; the handler now calls `getTokenBalance` uniformly for every input mint.
+
+```ts
+// src/services/balanceService.ts — getTokenBalance
+async getTokenBalance(publicKey, mint, signal?) {
+    // A-9: the wSOL mint doesn't appear in Ultra's BalanceMap — native SOL
+    // lives under the literal "SOL" key. Alias at the service layer so no
+    // caller has to know about this invariant.
+    if (mint === WRAPPED_SOL_MINT) {
+        return balanceService.getSolBalance(publicKey, signal);
+    }
+    const balances = await balanceService.getAllBalances(publicKey, signal);
+    const entry = balances[mint];
+    return entry !== undefined ? entry.uiAmount : 0;
+}
+```
+
+**Why now (not a later polish):**
+1. **The invariant belongs to the service.** A-8 lived in the handler because the service was on 3-1's "do not modify" list. Now that 3-1 is closed and PR #1 is open, promoting the alias is the right structural fix — future callers (fee estimator in 3-2, retry logic in 3-3) inherit correctness for free.
+2. **Test coverage moves with the code.** A-8's regression tests lived in `preflightChecks.test.ts` and mocked `balanceService` entirely — they asserted preflight's branching logic, not the service's actual behavior. A-9 adds tests at the service layer that would have caught the original bug directly (happy path + RPC fallback for wSOL mint).
+3. **Removes duplication risk.** Any handler that reads a user-supplied mint (preflight, fee estimator, slippage sanity-check, balance-warning banner) would otherwise need to re-implement the alias. A-9 eliminates the pattern at the source.
+
+**Downstream impact:**
+- **`src/handlers/preflightChecks.ts`:** remove the `WRAPPED_SOL_MINT` constant and the ternary branch in check 7. Check 7 becomes a single uniform `getTokenBalance` call.
+- **`src/handlers/preflightChecks.test.ts`:** remove the 3 A-8-specific tests (they tested handler-level aliasing that no longer exists). Update the happy-path test and the check-6 boundary test to reflect uniform `getTokenBalance` usage.
+- **`src/services/balanceService.test.ts`:** add wSOL-alias tests — happy path (Ultra) and RPC fallback (Ultra down).
+- **No UI, state, or contract change.** The `BalanceMap` shape, `getSolBalance` contract, and preflight semantics are unchanged.
+
+**Why safe to change a closed contract:**
+`getTokenBalance` is called in exactly one place today (`preflightChecks.ts` check 7). Passing the wSOL mint previously returned `0` (buggy); now it returns the correct balance. No caller that relied on the old broken behavior exists — A-8 documented the bug, and the current preflight branch was the workaround being unwound.
+
+**Files affected:**
+- `src/services/balanceService.ts` — alias wSOL mint in `getTokenBalance`.
+- `src/services/balanceService.test.ts` — 2 new cases.
+- `src/handlers/preflightChecks.ts` — drop `WRAPPED_SOL_MINT` constant, drop check-7 ternary.
+- `src/handlers/preflightChecks.test.ts` — remove 3 handler-level aliasing tests, update 2 existing tests to match simplified flow.
+- `docs/amendments.md` — this entry (closes the A-8 follow-up).

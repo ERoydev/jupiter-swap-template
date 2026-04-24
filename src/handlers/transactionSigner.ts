@@ -46,8 +46,17 @@ export const transactionSigner = {
       );
     }
 
-    // VersionedTransaction → bytes → base64
+    // VersionedTransaction → bytes → base64.
+    //
+    // Spreading a Uint8Array through `String.fromCharCode(...bytes)` works
+    // today (VT payloads are well below the ~64K arg-count cap some engines
+    // enforce), but a chunked loop is safer-by-construction and keeps this
+    // code future-proof for larger serialized payloads.
     const signedBytes = signed.serialize();
-    return btoa(String.fromCharCode(...signedBytes));
+    let binary = "";
+    for (const byte of signedBytes) {
+      binary += String.fromCharCode(byte);
+    }
+    return btoa(binary);
   },
 };

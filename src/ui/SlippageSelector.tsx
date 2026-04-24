@@ -18,6 +18,18 @@ const PRESETS: readonly Preset[] = [
 
 const PRESET_BPS_SET = new Set(PRESETS.map((p) => p.bps));
 
+// Accepts integers (`2`), leading-digit decimals (`2.5`), and leading-dot
+// decimals (`.5`). Rejects trailing junk like `2.5abc` that parseFloat would
+// otherwise silently truncate to a valid-looking number.
+const DECIMAL_RE = /^(?:\d+(?:\.\d+)?|\.\d+)$/;
+
+function isValidCustomInput(raw: string): boolean {
+    const trimmed = raw.trim();
+    if (!DECIMAL_RE.test(trimmed)) return false;
+    const parsed = parseFloat(trimmed);
+    return isValidCustomPercent(parsed);
+}
+
 function isValidCustomPercent(percent: number): boolean {
     return (
         Number.isFinite(percent) && percent >= 0.01 && percent <= 50
@@ -53,8 +65,7 @@ export function SlippageSelector({ value, onChange }: SlippageSelectorProps) {
     }
 
     function commitCustom() {
-        const parsed = parseFloat(customDraft);
-        if (!isValidCustomPercent(parsed)) {
+        if (!isValidCustomInput(customDraft)) {
             // Invalid on commit — revert silently. The typing-time error
             // already fired via handleInputChange's aria-alert; re-raising it
             // here only to immediately clear it was a no-op that made role="alert"
@@ -63,7 +74,7 @@ export function SlippageSelector({ value, onChange }: SlippageSelectorProps) {
             setError(null);
             return;
         }
-        const bps = Math.round(parsed * 100);
+        const bps = Math.round(parseFloat(customDraft) * 100);
         setEditingCustom(false);
         setError(null);
         if (bps !== value) onChange(bps);
@@ -83,8 +94,7 @@ export function SlippageSelector({ value, onChange }: SlippageSelectorProps) {
     function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
         const v = e.target.value;
         setCustomDraft(v);
-        const parsed = parseFloat(v);
-        if (v === "" || isValidCustomPercent(parsed)) {
+        if (v === "" || isValidCustomInput(v)) {
             setError(null);
         } else {
             setError("Enter 0.01–50");

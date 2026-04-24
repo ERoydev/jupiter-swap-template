@@ -39,6 +39,18 @@ import "@solana/wallet-adapter-react-ui/styles.css";
 
 const DEBOUNCE_MS = 300;
 
+// Strict decimal matcher for the user-typed amount. Accepts `1`, `1.5`, `.5`;
+// rejects `1.5abc` (which parseFloat silently truncates to 1.5). Used at every
+// boundary where we convert the raw input string to lamports.
+const POSITIVE_DECIMAL_RE = /^(?:\d+(?:\.\d+)?|\.\d+)$/;
+
+function parsePositiveAmount(raw: string): number | null {
+    const trimmed = raw.trim();
+    if (!POSITIVE_DECIMAL_RE.test(trimmed)) return null;
+    const n = parseFloat(trimmed);
+    return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 export function SwapCard() {
     const { publicKey, connected, signTransaction } = useWallet();
     const { setVisible: setWalletModalVisible } = useWalletModal();
@@ -138,10 +150,11 @@ export function SwapCard() {
     // so picking BONK (5 decimals) produces correct lamports, not SOL-scaled lamports.
     // Slippage dependency (A-7) ensures a new preset triggers a fresh /order request.
     useEffect(() => {
-        if (!inputAmount || parseFloat(inputAmount) <= 0) return;
+        const parsed = parsePositiveAmount(inputAmount);
+        if (parsed === null) return;
         if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
         const lamports = Math.floor(
-            parseFloat(inputAmount) * 10 ** inputToken.decimals,
+            parsed * 10 ** inputToken.decimals,
         ).toString();
         fetchQuote(lamports);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -155,8 +168,8 @@ export function SwapCard() {
                 clearTimeout(debounceTimerRef.current);
             }
 
-            const parsed = parseFloat(value);
-            if (!value || isNaN(parsed) || parsed <= 0) {
+            const parsed = parsePositiveAmount(value);
+            if (parsed === null) {
                 return;
             }
 
@@ -195,14 +208,15 @@ export function SwapCard() {
             clearTimeout(preflightDebounceRef.current);
         }
 
-        if (!inputAmount || parseFloat(inputAmount) <= 0) {
+        const parsedAmount = parsePositiveAmount(inputAmount);
+        if (parsedAmount === null) {
             setPreflightError(null);
             return;
         }
 
         preflightDebounceRef.current = setTimeout(() => {
             const amountLamports = Math.floor(
-                parseFloat(inputAmount) * 10 ** inputToken.decimals,
+                parsedAmount * 10 ** inputToken.decimals,
             ).toString();
             preflightChecks
                 .run(
@@ -248,14 +262,21 @@ export function SwapCard() {
 
     // Auto-refresh quote every QUOTE_REFRESH_INTERVAL_MS while QuoteReady + tab visible.
     // Pauses while hidden to avoid burning RPC; immediately refetches on tab refocus.
+    //
+    // Deps are listed explicitly (mirroring the sibling refetch-on-change effect)
+    // rather than relying on `fetchQuote`'s internal closure over
+    // outputToken.id / slippageBps / publicKey / connected. Relying on fetchQuote
+    // identity alone would silently drop auto-refresh parity if a future edit
+    // changed fetchQuote's own deps.
     useEffect(() => {
         if (context.state !== SwapState.QuoteReady) return;
-        if (!inputAmount || parseFloat(inputAmount) <= 0) return;
+        const parsed = parsePositiveAmount(inputAmount);
+        if (parsed === null) return;
 
         const refresh = () => {
             if (document.visibilityState !== "visible") return;
             const lamports = Math.floor(
-                parseFloat(inputAmount) * 10 ** inputToken.decimals,
+                parsed * 10 ** inputToken.decimals,
             ).toString();
             fetchQuote(lamports);
         };
@@ -275,19 +296,29 @@ export function SwapCard() {
         inputAmount,
         inputToken.id,
         inputToken.decimals,
+        outputToken.id,
+        slippageBps,
+        publicKey,
+        connected,
         fetchQuote,
     ]);
 
     const handleSwap = useCallback(async () => {
         // 1. Stale-quote gate (>30s since fetch) — refresh and bail out early.
+        //    Intentionally short-circuits before step 2: the debounced preflight
+        //    effect will re-run against the fresh quote once it lands, so the
+        //    next user click is gated on a preflight result that reflects
+        //    current-balance + current-quote. This is why step 2 only executes
+        //    on the fresh-quote branch.
         if (
             context.quoteFetchedAt !== null &&
             Date.now() - context.quoteFetchedAt > STALE_THRESHOLD_MS
         ) {
             dispatch({ type: "FETCH_QUOTE" });
-            if (inputAmount && parseFloat(inputAmount) > 0) {
+            const staleParsed = parsePositiveAmount(inputAmount);
+            if (staleParsed !== null) {
                 const lamports = Math.floor(
-                    parseFloat(inputAmount) * 10 ** inputToken.decimals,
+                    staleParsed * 10 ** inputToken.decimals,
                 ).toString();
                 void fetchQuote(lamports);
             }
@@ -297,8 +328,9 @@ export function SwapCard() {
         if (!publicKey || !context.quote || !context.quote.transaction) return;
 
         // 2. Authoritative fresh preflight at click time.
+        const parsedAmount = parsePositiveAmount(inputAmount) ?? 0;
         const amountLamports = Math.floor(
-            parseFloat(inputAmount || "0") * 10 ** inputToken.decimals,
+            parsedAmount * 10 ** inputToken.decimals,
         ).toString();
         try {
             await preflightChecks.run(
@@ -373,12 +405,10 @@ export function SwapCard() {
                     <QuoteRefreshIndicator
                         state={context.state}
                         onRefresh={() => {
-                            if (!inputAmount || parseFloat(inputAmount) <= 0) {
-                                return;
-                            }
+                            const parsed = parsePositiveAmount(inputAmount);
+                            if (parsed === null) return;
                             const lamports = Math.floor(
-                                parseFloat(inputAmount) *
-                                    10 ** inputToken.decimals,
+                                parsed * 10 ** inputToken.decimals,
                             ).toString();
                             void fetchQuote(lamports);
                         }}
@@ -475,7 +505,7 @@ export function SwapCard() {
                     inputSymbol={inputToken.symbol}
                     outputSymbol={outputToken.symbol}
                     inputAmount={Math.floor(
-                        parseFloat(inputAmount || "0") *
+                        (parsePositiveAmount(inputAmount) ?? 0) *
                             10 ** inputToken.decimals,
                     ).toString()}
                     inputDecimals={inputToken.decimals}

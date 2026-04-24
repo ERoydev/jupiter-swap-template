@@ -4,11 +4,6 @@ import { isValidBase58PublicKey } from "../lib/publicKey";
 import { MIN_SOL_BALANCE_UI } from "../config/constants";
 import { ErrorType, SwapError } from "../types/errors";
 
-// A-8: native SOL lives under the literal "SOL" key in BalanceMap; the
-// wSOL mint address does not appear there. Check 7 aliases to
-// getSolBalance when the input is native SOL.
-const WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112";
-
 export interface PreflightParams {
   inputMint: string;
   outputMint: string;
@@ -103,14 +98,19 @@ export const preflightChecks = {
       );
     }
 
-    // 7. Enough input-token balance (A-8: wSOL aliases to native SOL)
-    const inputBalanceUi =
-      params.inputMint === WRAPPED_SOL_MINT
-        ? await balanceService.getSolBalance(wallet.publicKey)
-        : await balanceService.getTokenBalance(
-            wallet.publicKey,
-            params.inputMint,
-          );
+    // 7. Enough input-token balance. A-9: `balanceService.getTokenBalance`
+    // transparently aliases the wSOL mint to native SOL, so this single call
+    // covers both "SOL -> X" and "SPL -> X" swaps without special-casing.
+    //
+    // Float math note (A-8 context): `amountNum` is user-supplied in smallest
+    // units (lamports / raw token units). For realistic swap sizes it stays
+    // well below 2^53, so the float division is exact. If a future feature
+    // accepts arbitrary-precision amounts (e.g. a token with 18 decimals
+    // swapped in trillions), swap this for BigInt-based math.
+    const inputBalanceUi = await balanceService.getTokenBalance(
+      wallet.publicKey,
+      params.inputMint,
+    );
     const amountUi = amountNum / 10 ** params.inputDecimals;
     if (inputBalanceUi < amountUi) {
       throw new SwapError(

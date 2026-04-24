@@ -47,7 +47,9 @@ beforeEach(() => {
 describe("preflightChecks.run — happy path (all 7 checks pass)", () => {
   it("resolves void when every check passes", async () => {
     const bal = await loadMockBalance();
-    // A-8: with wSOL aliasing check 7 reads getSolBalance; need >= 1 UI SOL.
+    // A-9: wSOL aliasing now lives in `balanceService.getTokenBalance` itself,
+    // so preflight calls `getTokenBalance` uniformly. The mock returns whatever
+    // value we want for check 7 regardless of input mint.
     vi.mocked(bal.getSolBalance).mockResolvedValue(5);
     vi.mocked(bal.getTokenBalance).mockResolvedValue(2);
 
@@ -146,8 +148,8 @@ describe("preflightChecks.run — check 6: enough SOL", () => {
     vi.mocked(bal.getTokenBalance).mockResolvedValue(100);
 
     const preflight = await loadHandler();
-    // Use USDC as input so check 7 reads getTokenBalance (not aliased). This
-    // isolates the test's intent to check 6's boundary condition.
+    // Use USDC as input so check 7's getTokenBalance mock is semantically
+    // "USDC balance", isolating the boundary condition to check 6 (SOL).
     await expect(
       preflight.run(
         {
@@ -164,57 +166,10 @@ describe("preflightChecks.run — check 6: enough SOL", () => {
   });
 });
 
-describe("preflightChecks.run — check 7: wSOL mint aliases to native SOL (A-8)", () => {
-  it("aliases to getSolBalance when inputMint is the wSOL mint (passes when SOL >= amount)", async () => {
-    const bal = await loadMockBalance();
-    vi.mocked(bal.getSolBalance).mockResolvedValue(5); // has 5 SOL
-    vi.mocked(bal.getTokenBalance).mockResolvedValue(0); // would fail if used
-
-    const preflight = await loadHandler();
-    await expect(preflight.run(validParams, connectedWallet)).resolves.toBeUndefined();
-    // getSolBalance called twice: once for check 6, once for aliased check 7.
-    expect(bal.getSolBalance).toHaveBeenCalledTimes(2);
-    expect(bal.getTokenBalance).not.toHaveBeenCalled();
-  });
-
-  it("throws InsufficientBalance when wSOL mint input exceeds SOL balance", async () => {
-    const bal = await loadMockBalance();
-    // 0.5 SOL covers check 6 (>= 0.01) but < 1 SOL amount → check 7 fails.
-    vi.mocked(bal.getSolBalance).mockResolvedValue(0.5);
-    vi.mocked(bal.getTokenBalance).mockResolvedValue(999); // irrelevant
-
-    const preflight = await loadHandler();
-    await expect(preflight.run(validParams, connectedWallet)).rejects.toMatchObject({
-      type: ErrorType.InsufficientBalance,
-      message: "Insufficient SOL balance",
-    });
-    expect(bal.getTokenBalance).not.toHaveBeenCalled();
-  });
-
-  it("still uses getTokenBalance for non-SOL input mints", async () => {
-    const bal = await loadMockBalance();
-    vi.mocked(bal.getSolBalance).mockResolvedValue(0.5); // fees only
-    vi.mocked(bal.getTokenBalance).mockResolvedValue(2);
-
-    const preflight = await loadHandler();
-    await expect(
-      preflight.run(
-        {
-          ...validParams,
-          inputMint: USDC_MINT,
-          outputMint: SOL_MINT,
-          inputSymbol: "USDC",
-          inputDecimals: 6,
-          amount: "1000000", // 1 USDC
-        },
-        connectedWallet,
-      ),
-    ).resolves.toBeUndefined();
-    // getSolBalance called once for check 6; getTokenBalance called once for check 7.
-    expect(bal.getSolBalance).toHaveBeenCalledTimes(1);
-    expect(bal.getTokenBalance).toHaveBeenCalledTimes(1);
-  });
-});
+// A-8's handler-level wSOL aliasing tests were moved to
+// `src/services/balanceService.test.ts` in A-9, where the invariant now lives.
+// Preflight calls `getTokenBalance` uniformly — verifying wSOL→SOL delegation
+// at this layer would be testing the mock, not the production code.
 
 describe("preflightChecks.run — check 7: enough input token", () => {
   it("throws InsufficientBalance with interpolated symbol when token balance < amount", async () => {
