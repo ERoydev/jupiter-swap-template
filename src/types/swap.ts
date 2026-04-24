@@ -16,6 +16,7 @@ export interface OrderResponse {
   feeBps: number;
   feeMint: string;
   priceImpactPct?: string;
+  slippageBps?: number;
 }
 
 export interface ExecuteResponse {

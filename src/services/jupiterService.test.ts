@@ -44,6 +44,58 @@ describe("jupiterService.getOrder", () => {
     expect(opts.headers["x-api-key"]).toBe("test-key");
   });
 
+  it("includes slippageBps param when provided (A-7)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ...mockOrderResponse, slippageBps: 50 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const getOrder = await loadGetOrder();
+    await getOrder({
+      inputMint: "m1",
+      outputMint: "m2",
+      amount: "100",
+      slippageBps: 50,
+    });
+
+    const [url] = fetchMock.mock.calls[0]!;
+    expect(url).toContain("slippageBps=50");
+  });
+
+  it("omits slippageBps param when undefined (A-7)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockOrderResponse),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const getOrder = await loadGetOrder();
+    await getOrder({ inputMint: "m1", outputMint: "m2", amount: "100" });
+
+    const [url] = fetchMock.mock.calls[0]!;
+    expect(url).not.toContain("slippageBps");
+  });
+
+  it("decodes slippageBps from Jupiter response (A-7)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({ ...mockOrderResponse, slippageBps: 73 }),
+      }),
+    );
+
+    const getOrder = await loadGetOrder();
+    const result = await getOrder({
+      inputMint: "m1",
+      outputMint: "m2",
+      amount: "100",
+    });
+    expect(result.slippageBps).toBe(73);
+  });
+
   it("includes taker param when provided", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
