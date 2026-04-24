@@ -8,7 +8,6 @@ import { DetailRow, DetailList } from "@/components/ui/detail-row";
 import { PriceImpactBadge } from "./PriceImpactBadge";
 import { QuoteFreshnessIndicator } from "./QuoteFreshnessIndicator";
 import type { OrderResponse } from "../types/swap";
-import { DEFAULT_SLIPPAGE_BPS } from "../config/constants";
 
 interface QuoteDisplayProps {
   quote: OrderResponse;
@@ -18,10 +17,11 @@ interface QuoteDisplayProps {
   inputDecimals: number;
   outputDecimals: number;
   quoteFetchedAt: number | null;
+  fallbackSlippageBps: number;
   defaultExpanded?: boolean;
 }
 
-const DISPLAY_DECIMALS = 4;
+const DISPLAY_DECIMALS = 6;
 
 function calculateRate(
   inputAmount: string,
@@ -51,6 +51,7 @@ export function QuoteDisplay({
   inputDecimals,
   outputDecimals,
   quoteFetchedAt,
+  fallbackSlippageBps,
   defaultExpanded = true,
 }: QuoteDisplayProps) {
   const rate = calculateRate(
@@ -60,7 +61,8 @@ export function QuoteDisplay({
     outputDecimals,
   );
   const outputFormatted = formatAmount(quote.outAmount, outputDecimals);
-  const slippagePercent = (DEFAULT_SLIPPAGE_BPS / 100).toFixed(1);
+  const effectiveSlippageBps = quote.slippageBps ?? fallbackSlippageBps;
+  const slippagePercent = (effectiveSlippageBps / 100).toFixed(2);
 
   return (
     <Collapsible defaultOpen={defaultExpanded}>
@@ -112,7 +114,7 @@ export function QuoteDisplay({
           />
           <DetailRow
             label="Slippage"
-            value={`${slippagePercent}% (auto)`}
+            value={`${slippagePercent}%`}
           />
           <QuoteFreshnessIndicator fetchedAt={quoteFetchedAt} />
         </DetailList>

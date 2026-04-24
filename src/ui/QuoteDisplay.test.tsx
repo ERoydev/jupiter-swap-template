@@ -27,6 +27,7 @@ const DEFAULTS = {
   inputDecimals: 9,
   outputDecimals: 6,
   quoteFetchedAt: null,
+  fallbackSlippageBps: 50,
 };
 
 describe("QuoteDisplay — AC-3 quote rendering", () => {
@@ -34,8 +35,8 @@ describe("QuoteDisplay — AC-3 quote rendering", () => {
     const { container } = render(
       <QuoteDisplay quote={makeQuote()} {...DEFAULTS} />,
     );
-    // 1 SOL → 1.5 USDC (4-decimal display)
-    expect(container.textContent).toContain("1 SOL = 1.5000 USDC");
+    // 1 SOL → 1.5 USDC (6-decimal display — A-6)
+    expect(container.textContent).toContain("1 SOL = 1.500000 USDC");
   });
 
   it("renders the output amount with output symbol", () => {
@@ -60,11 +61,34 @@ describe("QuoteDisplay — AC-3 quote rendering", () => {
     expect(container.textContent).toContain("0.3%"); // 25 bps = 0.25 → 0.3 with toFixed(1)
   });
 
-  it("renders slippage as '0.5% (auto)'", () => {
+  it("renders slippage from fallback when quote.slippageBps is missing (A-7)", () => {
     const { container } = render(
       <QuoteDisplay quote={makeQuote()} {...DEFAULTS} />,
     );
-    expect(container.textContent).toContain("0.5% (auto)");
+    expect(container.textContent).toContain("0.50%");
+    expect(container.textContent).not.toContain("(auto)");
+  });
+
+  it("renders slippage from quote.slippageBps when present (A-7)", () => {
+    const { container } = render(
+      <QuoteDisplay
+        quote={makeQuote({ slippageBps: 73 })}
+        {...DEFAULTS}
+      />,
+    );
+    expect(container.textContent).toContain("0.73%");
+  });
+
+  it("prefers quote.slippageBps over fallbackSlippageBps (A-7)", () => {
+    const { container } = render(
+      <QuoteDisplay
+        quote={makeQuote({ slippageBps: 100 })}
+        {...DEFAULTS}
+        fallbackSlippageBps={50}
+      />,
+    );
+    expect(container.textContent).toContain("1.00%");
+    expect(container.textContent).not.toContain("0.50%");
   });
 
   it("renders freshness indicator when quoteFetchedAt is set", () => {
