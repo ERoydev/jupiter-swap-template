@@ -3,7 +3,7 @@
   "flow": "greenfield",
   "version": "next-2.0",
   "created": "2026-04-14T06:44:29.255Z",
-  "lastUpdated": "2026-04-23T09:12:17Z",
+  "lastUpdated": "2026-04-24T12:39:57Z",
   "currentPhase": "implement",
   "currentStep": null,
   "currentCheckpoint": null,
@@ -36,7 +36,7 @@
       "wavesPlanned": 4
     }
   },
-  "storiesDone": 5,
+  "storiesDone": 7,
   "storiesTotal": 11,
   "changeStories": [],
   "tooling": {
@@ -53,7 +53,7 @@
     "total": 187,
     "passing": 187,
     "failing": 0,
-    "lastRefreshedAt": "2026-04-23T09:12:17Z",
+    "lastRefreshedAt": "2026-04-23T09:49:47Z",
     "lastRefreshedAtStory": 5
   },
   "metrics": {
@@ -92,7 +92,7 @@
       }
     },
     "stories": {
-      "completed": 5,
+      "completed": 7,
       "skipped": 0,
       "changeStoriesCreated": 0,
       "gate5Passes": 5,
@@ -101,7 +101,7 @@
       "avgTasksPerStory": 3.4,
       "sizeDistribution": {
         "S": 2,
-        "M": 3,
+        "M": 6,
         "L": 0
       }
     },
@@ -126,7 +126,7 @@
       "findingsDeferred": 11
     },
     "quality": {
-      "interfaceAudits": 5,
+      "interfaceAudits": 7,
       "interfaceMismatches": 0,
       "amendments": 6,
       "concerns": 7,
@@ -158,8 +158,8 @@
       }
     },
     "execution": {
-      "totalSessions": 8,
-      "pauseResumeCount": 3,
+      "totalSessions": 9,
+      "pauseResumeCount": 6,
       "agentTeamsUsed": false,
       "parallelWaves": 0,
       "parallelStories": 0,
@@ -197,7 +197,9 @@
       "testsAdded": 100
     }
   },
-  "waveStrategy": {},
+  "waveStrategy": {
+    "3": "sequential"
+  },
   "devops": {
     "pass1": "pending",
     "pass2": "pending",
@@ -208,6 +210,61 @@
       "id": "4fb13a65-96c3-40fd-84e4-3714723e48cd",
       "transcript": "/Users/emilemilovroydev/.claude/projects/-Users-emilemilovroydev-Rust-projects-Solana-swap-integration-templates-jupiter-swap-template/4fb13a65-96c3-40fd-84e4-3714723e48cd.jsonl",
       "firstSeenAt": "2026-04-23T07:40:27.520Z"
+    },
+    {
+      "id": "002db1d2-71b8-4484-b860-44313bf67ab5",
+      "transcript": "/Users/emilemilovroydev/.claude/projects/-Users-emilemilovroydev-Rust-projects-Solana-swap-integration-templates-jupiter-swap-template/002db1d2-71b8-4484-b860-44313bf67ab5.jsonl",
+      "firstSeenAt": "2026-04-23T09:46:10.292Z"
+    },
+    {
+      "id": "f2edadd9-b453-415e-9fc1-78576e016a7f",
+      "transcript": "/Users/emilemilovroydev/.claude/projects/-Users-emilemilovroydev-Rust-projects-Solana-swap-integration-templates-jupiter-swap-template/f2edadd9-b453-415e-9fc1-78576e016a7f.jsonl",
+      "firstSeenAt": "2026-04-23T10:31:53.640Z"
+    },
+    {
+      "id": "a676aec6-7e9d-46df-b099-651848af9e8b",
+      "transcript": "/Users/emilemilovroydev/.claude/projects/-Users-emilemilovroydev-Rust-projects-Solana-swap-integration-templates-jupiter-swap-template/a676aec6-7e9d-46df-b099-651848af9e8b.jsonl",
+      "firstSeenAt": "2026-04-23T12:02:38.475Z"
+    },
+    {
+      "id": "016c115e-25df-4cd4-bb1d-b935feded0e7",
+      "transcript": "/Users/emilemilovroydev/.claude/projects/-Users-emilemilovroydev-Rust-projects-Solana-swap-integration-templates-jupiter-swap-template/016c115e-25df-4cd4-bb1d-b935feded0e7.jsonl",
+      "firstSeenAt": "2026-04-23T12:06:40.931Z"
+    },
+    {
+      "id": "3434fea5-608f-4219-8803-e6c67498251c",
+      "transcript": "/Users/emilemilovroydev/.claude/projects/-Users-emilemilovroydev-Rust-projects-Solana-swap-integration-templates-jupiter-swap-template/3434fea5-608f-4219-8803-e6c67498251c.jsonl",
+      "firstSeenAt": "2026-04-23T12:13:39.903Z"
+    },
+    {
+      "id": "a561b6ea-22a4-4678-b26a-bf7632a6d9ff",
+      "transcript": "/Users/emilemilovroydev/.claude/projects/-Users-emilemilovroydev-Rust-projects-Solana-swap-integration-templates-jupiter-swap-template/a561b6ea-22a4-4678-b26a-bf7632a6d9ff.jsonl",
+      "firstSeenAt": "2026-04-23T13:01:43.321Z"
+    },
+    {
+      "id": "fca9f184-144b-4bdb-9a53-37ac884e10ba",
+      "transcript": "/Users/emilemilovroydev/.claude/projects/-Users-emilemilovroydev-Rust-projects-Solana-swap-integration-templates-jupiter-swap-template/fca9f184-144b-4bdb-9a53-37ac884e10ba.jsonl",
+      "firstSeenAt": "2026-04-23T13:07:04.423Z"
+    },
+    {
+      "id": "2f773abf-d6d3-4a3e-8d0a-a078a6d50b5f",
+      "transcript": "/Users/emilemilovroydev/.claude/projects/-Users-emilemilovroydev-Rust-projects-Solana-swap-integration-templates-jupiter-swap-template/2f773abf-d6d3-4a3e-8d0a-a078a6d50b5f.jsonl",
+      "firstSeenAt": "2026-04-23T13:07:07.591Z"
+    },
+    {
+      "id": "2e3cac1c-be3e-4270-8de0-49afd0665dd8",
+      "transcript": "/Users/emilemilovroydev/.claude/projects/-Users-emilemilovroydev-Rust-projects-Solana-swap-integration-templates-jupiter-swap-template/2e3cac1c-be3e-4270-8de0-49afd0665dd8.jsonl",
+      "firstSeenAt": "2026-04-23T13:57:46.009Z"
+    },
+    {
+      "id": "d09c8893-c1d7-48a1-b6fc-aecec9f43177",
+      "transcript": "/Users/emilemilovroydev/.claude/projects/-Users-emilemilovroydev-Rust-projects-Solana-swap-integration-templates-jupiter-swap-template/d09c8893-c1d7-48a1-b6fc-aecec9f43177.jsonl",
+      "firstSeenAt": "2026-04-23T19:16:34.448Z"
+    },
+    {
+      "id": "58d71ad1-2864-4ae4-b849-41ac11987f4d",
+      "transcript": "/Users/emilemilovroydev/.claude/projects/-Users-emilemilovroydev-Rust-projects-Solana-swap-integration-templates-jupiter-swap-template/58d71ad1-2864-4ae4-b849-41ac11987f4d.jsonl",
+      "firstSeenAt": "2026-04-24T07:38:44.795Z"
     }
   ]
 }
