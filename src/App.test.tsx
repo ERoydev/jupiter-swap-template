@@ -545,6 +545,113 @@ describe("SwapCard — Task 4 swap orchestration (AC-3-1-1, 3-1-5)", () => {
     );
   });
 
+  // Regression test for the HIGH finding from PR #1 second-pass review.
+  // preflightChecks.run is async and unabortable, so without a stale-invocation
+  // guard a slow earlier call can resolve AFTER a fast later call and overwrite
+  // preflightError with a stale result. Scenario: user changes input token
+  // while an earlier preflight is still in flight; the earlier promise must
+  // NOT clobber state written by the later one.
+  it("ignores a stale preflight result that resolves after a newer invocation (race guard)", async () => {
+    // Connect wallet so the debounced preflight effect is actually exercised.
+    mockUseWallet.mockReturnValue({
+      publicKey: {
+        toBase58: () => "So11111111111111111111111111111111111111112",
+      },
+      connected: true,
+      signTransaction: vi.fn(async (tx: unknown) => tx),
+    });
+
+    // Keep fetch from dispatching real quote state — we don't care about the
+    // quote path here, only the preflight race.
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => validQuoteResponse,
+    }) as unknown as typeof fetch;
+
+    // Two manually-resolvable promises. First call (on initial amount) gets
+    // the SLOW deferred; second call (after token change) gets the FAST one.
+    let resolveFirst: (() => void) | null = null;
+    let rejectFirst: ((err: unknown) => void) | null = null;
+    let resolveSecond: (() => void) | null = null;
+
+    vi.mocked(preflightChecks.run)
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((res, rej) => {
+            resolveFirst = res;
+            rejectFirst = rej;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((res) => {
+            resolveSecond = res;
+          }),
+      );
+
+    const { container } = renderSwap();
+
+    // Type amount — kicks off first debounced preflight.
+    const input = container.querySelector("input") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "1" } });
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      await Promise.resolve();
+    });
+    expect(vi.mocked(preflightChecks.run)).toHaveBeenCalledTimes(1);
+    expect(resolveFirst).not.toBeNull();
+
+    // Change input token to BONK → effect re-runs, schedules second preflight.
+    const fromButton = screen.getByRole("button", {
+      name: /Select input token/i,
+    });
+    await act(async () => {
+      fireEvent.click(fromButton);
+    });
+    const pickBonk = screen.getByTestId("mock-pick-bonk");
+    await act(async () => {
+      fireEvent.click(pickBonk);
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      await Promise.resolve();
+    });
+    expect(vi.mocked(preflightChecks.run)).toHaveBeenCalledTimes(2);
+
+    // Resolve SECOND preflight first (the "current" invocation) — success.
+    await act(async () => {
+      resolveSecond?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // Now resolve FIRST preflight LAST, with a failure that — without the
+    // race guard — would overwrite the success state to InsufficientSOL.
+    await act(async () => {
+      rejectFirst?.(
+        new SwapError(
+          ErrorType.InsufficientSOL,
+          "You need at least 0.01 SOL for transaction fees",
+        ),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // Touch the unused resolveFirst to keep TS happy about the declared binding.
+    void resolveFirst;
+
+    // Assert: no stale "Insufficient SOL" tooltip surfaced. The current
+    // invocation succeeded, so the swap button carries the enabled "Swap" label.
+    const swapBtn = container.querySelector(
+      "button[aria-label='Swap tokens']",
+    ) as HTMLButtonElement | null;
+    expect(swapBtn).not.toBeNull();
+    expect(swapBtn?.textContent).toBe("Swap");
+    expect(swapBtn?.disabled).toBe(false);
+  });
+
   it("dispatches PREFLIGHT_FAILED and skips signing when preflightChecks.run throws at click time", async () => {
     const container = await setupConnectedWithQuote();
 

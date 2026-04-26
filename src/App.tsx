@@ -61,6 +61,12 @@ export function SwapCard() {
     const abortControllerRef = useRef<AbortController | null>(null);
     const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const preflightDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Monotonic id for stale-preflight detection. preflightChecks.run is async
+    // and unabortable, so a slow earlier invocation can resolve AFTER a faster
+    // later one and clobber preflightError. Each scheduled run captures its
+    // own id and checks it matches the latest before writing to state.
+    // Mirrors the abortControllerRef identity check used by fetchQuote.
+    const preflightInvocationRef = useRef(0);
 
     const [inputToken, setInputToken] = useState<TokenInfo>(DEFAULT_INPUT_TOKEN);
     const [outputToken, setOutputToken] = useState<TokenInfo>(DEFAULT_OUTPUT_TOKEN);
@@ -218,6 +224,7 @@ export function SwapCard() {
             const amountLamports = Math.floor(
                 parsedAmount * 10 ** inputToken.decimals,
             ).toString();
+            const myInvocation = ++preflightInvocationRef.current;
             preflightChecks
                 .run(
                     {
@@ -229,8 +236,12 @@ export function SwapCard() {
                     },
                     { connected, publicKey },
                 )
-                .then(() => setPreflightError(null))
+                .then(() => {
+                    if (myInvocation !== preflightInvocationRef.current) return;
+                    setPreflightError(null);
+                })
                 .catch((err: unknown) => {
+                    if (myInvocation !== preflightInvocationRef.current) return;
                     const swapErr =
                         err instanceof SwapError
                             ? err
