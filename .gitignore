@@ -4,3 +4,4 @@ dist
 *.local
 docs/.lock
 docs/.quick-lock
+.claude

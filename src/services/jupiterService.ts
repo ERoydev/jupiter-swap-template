@@ -7,6 +7,7 @@ interface GetOrderParams {
   outputMint: string;
   amount: string;
   taker?: string;
+  slippageBps?: number;
 }
 
 export async function getOrder(
@@ -21,6 +22,10 @@ export async function getOrder(
 
   if (params.taker) {
     queryParams["taker"] = params.taker;
+  }
+
+  if (typeof params.slippageBps === "number") {
+    queryParams["slippageBps"] = String(params.slippageBps);
   }
 
   try {

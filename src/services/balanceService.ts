@@ -4,6 +4,12 @@ import { connection } from "../lib/connection";
 import type { BalanceMap } from "../types/tokens";
 import { ErrorType, SwapError } from "../types/errors";
 
+// A-9: native SOL sits under the literal key "SOL" in Ultra's BalanceMap,
+// never under the wSOL mint address. Aliased here so every consumer of
+// getTokenBalance (preflight, fee estimator, future handlers) gets the
+// right number without re-implementing the special case.
+const WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112";
+
 /** Raw per-token entry returned by the Ultra balances endpoint. */
 interface UltraBalanceEntry {
   amount?: string;
@@ -135,7 +141,14 @@ export const balanceService = {
 
   /**
    * Returns the SPL token balance in UI units for the given mint.
-   * Ultra-only — no RPC fallback.
+   * Ultra-only — no RPC fallback for SPL tokens.
+   *
+   * A-9: the wSOL mint (`So111...11112`) is aliased to native SOL via
+   * `getSolBalance` (which does have an RPC fallback). This preserves the
+   * invariant "caller asks for a mint, gets the number of tokens held for
+   * that mint" even when Jupiter's BalanceMap stores native SOL under
+   * the key `"SOL"` instead of the wSOL mint address.
+   *
    * Returns `0` when the wallet doesn't hold the token.
    */
   async getTokenBalance(
@@ -143,6 +156,9 @@ export const balanceService = {
     mint: string,
     signal?: AbortSignal,
   ): Promise<number> {
+    if (mint === WRAPPED_SOL_MINT) {
+      return balanceService.getSolBalance(publicKey, signal);
+    }
     const balances = await balanceService.getAllBalances(publicKey, signal);
     const entry = balances[mint];
     return entry !== undefined ? entry.uiAmount : 0;

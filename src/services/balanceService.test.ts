@@ -247,3 +247,40 @@ describe("balanceService.getTokenBalance — Ultra fails (no RPC fallback)", () 
     expect(conn.getBalance).not.toHaveBeenCalled();
   });
 });
+
+// A-9: wSOL mint aliases to native SOL. These tests would have caught the
+// original A-8 bug at the service layer — the first preflight layer tests
+// shadowed it by mocking `getTokenBalance` directly.
+describe("balanceService.getTokenBalance — wSOL mint aliases to native SOL (A-9)", () => {
+  const WSOL_MINT = "So11111111111111111111111111111111111111112";
+
+  it("returns native SOL balance when called with the wSOL mint", async () => {
+    const client = await loadMockClient();
+    vi.mocked(client.get).mockResolvedValue(FORM_A_RESPONSE);
+
+    const service = await loadService();
+    const result = await service.getTokenBalance(MOCK_PUBLIC_KEY, WSOL_MINT);
+
+    // FORM_A_RESPONSE has SOL uiAmount = 5. Without aliasing this would be 0
+    // (wSOL mint is not a key in the BalanceMap).
+    expect(result).toBe(5);
+  });
+
+  it("uses the SOL RPC fallback when Ultra fails for the wSOL mint", async () => {
+    const client = await loadMockClient();
+    vi.mocked(client.get).mockRejectedValue(
+      new SwapError(ErrorType.NetworkError, "Ultra down", 503, true),
+    );
+
+    const conn = await loadMockConnection();
+    vi.mocked(conn.getBalance).mockResolvedValue(3_000_000_000);
+
+    const service = await loadService();
+    const result = await service.getTokenBalance(MOCK_PUBLIC_KEY, WSOL_MINT);
+
+    // Aliasing routes through getSolBalance, which falls back to RPC on
+    // Ultra failure. 3e9 lamports = 3 SOL.
+    expect(result).toBeCloseTo(3);
+    expect(conn.getBalance).toHaveBeenCalledWith(MOCK_PUBLIC_KEY);
+  });
+});

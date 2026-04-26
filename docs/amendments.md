@@ -208,3 +208,264 @@ Raydium/Uniswap/PancakeSwap/jup-ag/plugin all use a single disabled-button surfa
 - Story 3-1 must own the "Insufficient SOL" Swap-button state end to end. The existing plan AC (Story 3-1 AC-2 check #6 + AC-3) already covers this — no new 3-1 ACs needed.
 - Feature-inventory coverage for FR-11 check 6 (SOL preflight) now maps entirely to Story 3-1, not 2-3. The Feature Completeness Audit at the end of the feature should still pass because 3-1 covers it.
 - Renaming the story to "Balance Service Preflight Fetch-Failure Overlay" would be more accurate, but keeping the existing slug (`balance-service-proactive-warnings`) to avoid churning sprint-status.yaml / tags / commits. Story size S is preserved.
+
+---
+
+## A-6 — 2026-04-24 — Quote auto-refresh + manual refresh indicator (deferred from Story 4-1)
+
+**Story:** Scope addition applied during Story 3-1 implementation — logically owned by Story 4-1 (UI polish). Implemented early at user request because the deferred-scope cost (users staring at stale prices) was more visible than expected.
+**Finding that caught it:** User reported "Raydium constantly refreshes the price while I stay in the app — mine doesn't" mid-3-1. Feature was not in any story's scope.
+**Rule:** 4 (Architectural — new behavior, new component, new config constant).
+
+**What is added:**
+1. **Auto-refresh interval** in `src/App.tsx` — refetches the Jupiter quote every `QUOTE_REFRESH_INTERVAL_MS` (10 s) while `state === QuoteReady` AND `document.visibilityState === "visible"`. Pauses on tab hide; refetches immediately on tab refocus via `visibilitychange` listener. Interval cleared on state transition, token change, amount clear, or unmount.
+2. **Manual refresh control** — new `QuoteRefreshIndicator` component mounted in `SwapCard` header. Renders a refresh icon; click triggers immediate refetch. Disabled when no refetch is possible (`state !== QuoteReady && state !== LoadingQuote`). Subtle spin animation while `state === LoadingQuote`. Hidden entirely when `state === Idle` (no quote ever fetched).
+3. **New constant** in `src/config/constants.ts`: `export const QUOTE_REFRESH_INTERVAL_MS = 10_000;`.
+
+**Why necessary:**
+- Jupiter quotes include a recent blockhash and a price snapshot; both drift quickly. Without auto-refresh the user can stare at a 2-minute-old quote and be surprised when execution fails or the effective rate shifts.
+- The pre-existing stale-quote gate in `handleSwap` (`>30s`) catches this at click time but provides no visual signal during the wait. Industry standard (Raydium, Jupiter, Orca) is 10 s auto-refresh + manual-refresh affordance.
+- Originally in scope for Story 4-1 ("responsive-layout polish, full Tooltip a11y spec, tap-target ≥44px sweep") — quote-refresh UI was assumed to fold into the polish sweep but was not explicitly listed. Making it explicit here.
+
+**Downstream impact:**
+- **Story 4-1 scope note:** Quote refresh indicator is considered implemented via this amendment; Story 4-1 remains responsible only for the visual polish pass (e.g., countdown ring animation if desired, hover states, focus-visible ring parity with other controls).
+- **Preflight timing:** The debounced preflight effect (Story 3-1 Task 4) remains unchanged. Auto-refresh triggers `fetchQuote`, which flips state to `LoadingQuote → QuoteReady`; the preflight effect is keyed on amount/token/wallet, not on `quoteFetchedAt`, so it does not spuriously re-run on quote refresh. Verified: the dependency array is `[connected, publicKey, inputAmount, inputToken.id, inputToken.decimals, inputToken.symbol, outputToken.id]`.
+- **Stale-quote gate preserved:** Click-time `>30s` check in `handleSwap` remains as a last-resort guard in case auto-refresh is starved (network errors, prolonged tab-hidden sleep, etc.).
+- **Testing:** Component unit tests cover click behavior + disabled states + icon animation class. Interval behavior is not unit-tested (timer-based effects are fragile to mock); covered by manual verification.
+
+**Files affected:**
+- `src/config/constants.ts` — add `QUOTE_REFRESH_INTERVAL_MS`.
+- `src/App.tsx` — import the new constant, add the auto-refresh `useEffect`, mount `<QuoteRefreshIndicator>` in the SwapCard header.
+- `src/ui/QuoteRefreshIndicator.tsx` — new component.
+- `src/ui/QuoteRefreshIndicator.test.tsx` — new test file.
+
+**Not included (deferred to Story 4-1 if wanted):**
+- Animated SVG countdown ring surrounding the refresh icon (cosmetic; adds ~40 lines of SVG + CSS-animation logic).
+- Keyboard shortcut (e.g., `Cmd+R` intercept) to trigger manual refresh.
+- Configurable refresh interval per-user or per-token-pair.
+
+**Follow-on — stale-while-revalidate display gate (applied 2026-04-24, same amendment):**
+During an auto-refresh (or any `FETCH_QUOTE` from `QuoteReady`), the reducer transitions `state: QuoteReady → LoadingQuote` but preserves `context.quote` in memory (`swapReducer.ts:89-91`, verified). The original `hasQuote` gate in `src/App.tsx` was:
+```ts
+const hasQuote =
+    context.state === SwapState.QuoteReady && context.quote !== null;
+```
+This caused a visible "0.00 / skeleton" flash during every 10 s auto-refresh because `hasQuote` flipped false while the old quote was still valid in state. Widened the gate to preserve the display while a refetch is in flight:
+```ts
+const hasQuote =
+    context.quote !== null &&
+    (context.state === SwapState.QuoteReady ||
+     context.state === SwapState.LoadingQuote);
+```
+**Behavioral side effect:** when the user types a new amount (triggering `FETCH_QUOTE` from `QuoteReady`), the previously-displayed quote now remains visible for ~500 ms until the new one arrives, instead of blanking to `"0.00"`. This matches Jupiter / Raydium / Orca stale-while-revalidate UX. First-ever quote load (state is `LoadingQuote` but `context.quote === null`) is unchanged — gate still evaluates false, empty state still shows.
+**No reducer change** — the fix lives entirely in the consuming component's render gate. `swapReducer.ts` remains a closed contract.
+
+**Sub-fix (same day):** With the `hasQuote` gate widened, the separate skeleton block at `src/App.tsx` (`{isLoading && (...)}`) began rendering *alongside* the preserved QuoteDisplay during refresh — producing two grey pulse bars above the real metadata. Tightened the skeleton condition to only show on first-ever load: `{isLoading && context.quote === null && (...)}`. Skeleton still appears when no quote is cached yet; suppressed on all subsequent refreshes because `context.quote` now holds the last good value.
+
+---
+
+## A-7 — 2026-04-24 — User-controlled slippage tolerance (Story 4-3)
+
+**Story:** 4-3 User-Controlled Slippage Tolerance (new, added to wave 4 alongside 4-1 UI polish).
+**Finding that caught it:** User review of `QuoteDisplay.tsx` — the displayed "0.5% (auto)" slippage was a hardcoded value from `DEFAULT_SLIPPAGE_BPS`, not the value Jupiter actually used. Jupiter's `/swap/v2/order` response returns `slippageBps` that the current `OrderResponse` type does not model.
+**Rule:** 3 (Significant — contract changes to `OrderResponse` and `getOrder` signature).
+
+**Original LOCKED contracts (story 2-1, DD-2):**
+```ts
+// src/types/swap.ts
+export interface OrderResponse {
+  transaction: string | null;
+  requestId: string;
+  outAmount: string;
+  router: string;
+  mode: string;
+  feeBps: number;
+  feeMint: string;
+  priceImpactPct?: string;   // added in A-1
+}
+
+// src/services/jupiterService.ts
+export async function getOrder(
+  params: { inputMint: string; outputMint: string; amount: string; taker?: string },
+  signal?: AbortSignal,
+): Promise<OrderResponse>
+```
+
+**Amended contracts (this amendment):**
+```ts
+// src/types/swap.ts
+export interface OrderResponse {
+  transaction: string | null;
+  requestId: string;
+  outAmount: string;
+  router: string;
+  mode: string;
+  feeBps: number;
+  feeMint: string;
+  priceImpactPct?: string;
+  slippageBps?: number;      // ← NEW. Echoed from Jupiter's /order response.
+}
+
+// src/services/jupiterService.ts
+export async function getOrder(
+  params: {
+    inputMint: string;
+    outputMint: string;
+    amount: string;
+    taker?: string;
+    slippageBps?: number;    // ← NEW. When provided, sent as a query param.
+  },
+  signal?: AbortSignal,
+): Promise<OrderResponse>
+```
+
+**Why necessary:**
+1. **Display accuracy.** `QuoteDisplay` currently shows `DEFAULT_SLIPPAGE_BPS / 100 = 0.5%` with an `(auto)` suffix. This is misleading — Jupiter omits `slippageBps` in the request today, triggering its dynamic-slippage path, which may pick 0.3% / 1% / 2% based on market conditions. The UI always says 0.5% regardless of reality.
+2. **User agency.** Every major Solana swap UI (Jupiter, Raydium, Orca, Phoenix, Drift) exposes slippage as a user control. Swapping volatile / low-liquidity tokens at a hardcoded 0.5% produces reverts that the user cannot remediate without editing code.
+3. **Contract addition only, no breaking change.** Both new fields are optional. All existing call sites continue to work without modification.
+
+**Decisions (locked per user selection 2026-04-24):**
+- Default slippage on first mount: **0.5%** (50 bps). Industry default.
+- No "Auto" option in v1 — all preset buttons and Custom send explicit `slippageBps`. Simplifies UX; users who want dynamic slippage need a story-follow-on.
+- No `localStorage` persistence in v1 — each page load starts at the default.
+
+**Downstream impact:**
+- **`QuoteDisplay` accuracy fix (this story, not a later polish):** read `quote.slippageBps` from the API response, drop the hardcoded `DEFAULT_SLIPPAGE_BPS / 100` path, drop the `(auto)` suffix. Falls back to the user-selected value if the response field is missing (defensive — Jupiter always returns it, but the type marks it optional).
+- **Re-fetch on slippage change:** adding `slippageBps` to the `fetchQuote` dep array (and to the auto-refresh effect from A-6) so any user-initiated slippage change triggers an immediate new `/order` request. No debounce — slippage changes are deliberate single clicks.
+- **Auto-refresh interaction (A-6):** when `slippageBps` changes, the auto-refresh effect's dependency changes, tearing down and re-establishing the 10-s interval with the new value. Confirmed safe.
+- **Story 4-1 (UI polish) scope adjustment:** the original 4-1 scope included a11y and responsive sweep; with slippage added to the card, 4-1 must now include slippage-control a11y (preset active state, `aria-pressed`, keyboard navigation across the four buttons, custom-input validation announcement). No rewrite needed, just extended coverage.
+- **Testing:** unit tests for `SlippageSelector` (preset click, active state, custom input validation), integration tests in `App.test.tsx` (re-fetch on change), type-level assertion on the new `slippageBps?` field in `getOrder`.
+
+**Files affected:**
+- `src/types/swap.ts` — extend `OrderResponse`.
+- `src/services/jupiterService.ts` — extend `getOrder` params + query construction.
+- `src/services/jupiterService.test.ts` — add case asserting `slippageBps` is sent as query param when provided; omitted when undefined.
+- `src/ui/SlippageSelector.tsx` — new component.
+- `src/ui/SlippageSelector.test.tsx` — new test file.
+- `src/ui/QuoteDisplay.tsx` — read from `quote.slippageBps`, drop hardcoded constant, drop `(auto)` suffix.
+- `src/ui/QuoteDisplay.test.tsx` — update assertions for the new display source.
+- `src/App.tsx` — local `slippageBps` state, mount `<SlippageSelector>` between amount rows and Swap button, pass through `fetchQuote`, add to effect deps.
+- `src/App.test.tsx` — integration case: changing slippage triggers re-fetch.
+- `src/config/constants.ts` — retain `DEFAULT_SLIPPAGE_BPS = 50` for initial state; no renames.
+
+**Not included (deferred):**
+- `[Auto]` fifth button that omits `slippageBps` from the request (falls back to Jupiter dynamic). Story-follow-on if a user asks for it.
+- `localStorage` persistence of last-used slippage. Story-follow-on.
+- Warning banner when user picks slippage >5% ("You're accepting unusually high slippage — are you sure?"). Story-follow-on.
+- Contextual default (e.g., auto-switch to 1% for low-liquidity output tokens). Story-follow-on, would need a token-metadata signal.
+
+---
+
+## A-8 — 2026-04-24 — Preflight check 7 wSOL-mint aliasing (Story 3-1 bug fix)
+
+**Story:** 3-1 Pre-flight Checks + Transaction Signing.
+**Finding that caught it:** Manual verification by the user — funded wallet with 0.11598 SOL and attempted SOL → USDC swap, received "Insufficient SOL balance" despite ample balance. Diagnosed live: check 7 returns 0 when `inputMint` is the wrapped-SOL mint because `balanceService` keys native SOL as `"SOL"` (string) while `getTokenBalance` does a mint-address key lookup.
+**Rule:** 2 (Moderate — wrong pattern for the SOL special case).
+
+**Root cause:**
+- `BalanceMap` (set by `src/services/balanceService.ts:88` — "native SOL is `\"SOL\"`") stores native SOL under the literal key `"SOL"` and all SPL tokens under their mint address.
+- `balanceService.getSolBalance()` knows this — reads `balances["SOL"]`.
+- `balanceService.getTokenBalance(publicKey, mint)` is generic — reads `balances[mint]`. Passing the wrapped-SOL mint (`So11111111111111111111111111111111111111112`) misses the native-SOL entry → returns 0.
+- Preflight check 7 (`src/handlers/preflightChecks.ts`) calls `getTokenBalance` with whatever `params.inputMint` is. For any SOL → X swap, `params.inputMint` is the wSOL mint → check 7 falsely fails with `InsufficientBalance`.
+
+**Why the tests missed it:** `preflightChecks.test.ts` mocks `balanceService.getTokenBalance` with `vi.mocked(...).mockResolvedValueOnce(value)` — never exercises the real Ultra-response-driven balance map. Integration against live Jupiter Ultra was the first time the mismatch surfaced.
+
+**Fix (this amendment):**
+
+Special-case the wrapped-SOL mint inside preflight check 7. When `params.inputMint === WRAPPED_SOL_MINT`, call `balanceService.getSolBalance(wallet.publicKey)` instead of `balanceService.getTokenBalance(...)`:
+
+```ts
+// src/handlers/preflightChecks.ts — inside check 7 (sketch)
+const WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112";
+
+const inputBalanceUi = params.inputMint === WRAPPED_SOL_MINT
+    ? await balanceService.getSolBalance(wallet.publicKey)
+    : await balanceService.getTokenBalance(wallet.publicKey, params.inputMint);
+
+if (inputBalanceUi < amountUi) {
+    throw new SwapError(
+        ErrorType.InsufficientBalance,
+        `Insufficient ${params.inputSymbol} balance`,
+        undefined,
+        false,
+        { walletAddress: wallet.publicKey.toBase58(), mint: params.inputMint },
+    );
+}
+```
+
+**Why in the handler, not in `balanceService`:**
+- `src/services/balanceService.ts` is on Story 3-1's `DO NOT modify` list (closed contract from 2-3). Promoting the alias there requires a Rule 4 amendment and a broader change.
+- The handler-layer fix is localized to Story 3-1's own file and does not touch closed contracts.
+- A follow-on story (likely 4-x polish or a dedicated services cleanup) should promote the alias into `balanceService.getTokenBalance` itself so every caller benefits. Logged as follow-up below.
+
+**Constant choice:** use a file-local `WRAPPED_SOL_MINT` constant. The value matches `DEFAULT_INPUT_MINT` in `src/config/constants.ts`; a future refactor can consolidate the two. Avoided importing `DEFAULT_INPUT_MINT` here to keep the semantic crystal-clear — this is the *wrapped-SOL mint* (an immutable Solana facts), not "the default input token" (a UX choice).
+
+**Test additions:**
+- `src/handlers/preflightChecks.test.ts` — new regression case: inputMint = wSOL mint, wallet holds sufficient SOL, `getSolBalance` is mocked, `getTokenBalance` is NOT called (assert via `vi.mocked(balanceService.getTokenBalance).not.toHaveBeenCalled()`). Check 7 passes.
+- Companion case: inputMint = wSOL mint, wallet's SOL < amount → check 7 throws InsufficientBalance with the expected message. Asserts `getSolBalance` was called, `getTokenBalance` was not.
+
+**Downstream impact:**
+- **AC-3-1-2 check 7 semantics preserved** — still throws `InsufficientBalance` when the wallet can't afford the swap amount. Only the resolution path for native SOL changed.
+- **No reducer change, no component change, no contract change.** Handler-local fix only.
+- **Story 3-1 manual verification steps 1-10 can now be run end-to-end** — specifically step 4 (SOL → USDC swap attempt with funded wallet) which was blocked by this bug.
+
+**Files affected:**
+- `src/handlers/preflightChecks.ts` — add `WRAPPED_SOL_MINT` constant, alias check 7's balance lookup.
+- `src/handlers/preflightChecks.test.ts` — add two regression cases.
+
+**Follow-up (separate story, NOT this amendment):**
+- Promote the wSOL alias into `balanceService.getTokenBalance` so it returns native SOL for the wSOL mint automatically. Would let every consumer (preflight, fee estimator, any future handler) benefit without each one duplicating the special case. File this as a concerns.md item or a short CS story after 3-1 closes.
+
+> **Resolved by A-9 (2026-04-24).** The follow-up above is now closed — the alias lives at the service layer.
+
+---
+
+## A-9 — 2026-04-24 — wSOL alias moved to `balanceService.getTokenBalance` (post-3-1 review)
+
+**Story:** 3-1 Pre-flight Checks + Transaction Signing (post-merge review).
+**Finding that caught it:** Code review of PR #1 — "Value-key invariant belongs in balanceService, not preflight. A-8's wSOL alias is a caller-side patch for an invariant that balanceService owns. Every future caller will have to repeat this special case. Would also have caught the bug at the service layer's test."
+**Rule:** 3 (Significant — interface/contract change on a closed contract).
+
+**Original (A-8) LOCKED behavior:**
+- `balanceService.getTokenBalance(publicKey, wSOL_mint)` → returns `0` (the wSOL mint is not a key in Ultra's `BalanceMap`; native SOL sits under the literal key `"SOL"`).
+- Preflight check 7 works around this with a caller-side branch on `params.inputMint === WRAPPED_SOL_MINT`.
+
+**Amended behavior:**
+- `balanceService.getTokenBalance(publicKey, wSOL_mint)` → transparently delegates to `balanceService.getSolBalance(publicKey)`.
+- Preflight check 7 drops the special case; the handler now calls `getTokenBalance` uniformly for every input mint.
+
+```ts
+// src/services/balanceService.ts — getTokenBalance
+async getTokenBalance(publicKey, mint, signal?) {
+    // A-9: the wSOL mint doesn't appear in Ultra's BalanceMap — native SOL
+    // lives under the literal "SOL" key. Alias at the service layer so no
+    // caller has to know about this invariant.
+    if (mint === WRAPPED_SOL_MINT) {
+        return balanceService.getSolBalance(publicKey, signal);
+    }
+    const balances = await balanceService.getAllBalances(publicKey, signal);
+    const entry = balances[mint];
+    return entry !== undefined ? entry.uiAmount : 0;
+}
+```
+
+**Why now (not a later polish):**
+1. **The invariant belongs to the service.** A-8 lived in the handler because the service was on 3-1's "do not modify" list. Now that 3-1 is closed and PR #1 is open, promoting the alias is the right structural fix — future callers (fee estimator in 3-2, retry logic in 3-3) inherit correctness for free.
+2. **Test coverage moves with the code.** A-8's regression tests lived in `preflightChecks.test.ts` and mocked `balanceService` entirely — they asserted preflight's branching logic, not the service's actual behavior. A-9 adds tests at the service layer that would have caught the original bug directly (happy path + RPC fallback for wSOL mint).
+3. **Removes duplication risk.** Any handler that reads a user-supplied mint (preflight, fee estimator, slippage sanity-check, balance-warning banner) would otherwise need to re-implement the alias. A-9 eliminates the pattern at the source.
+
+**Downstream impact:**
+- **`src/handlers/preflightChecks.ts`:** remove the `WRAPPED_SOL_MINT` constant and the ternary branch in check 7. Check 7 becomes a single uniform `getTokenBalance` call.
+- **`src/handlers/preflightChecks.test.ts`:** remove the 3 A-8-specific tests (they tested handler-level aliasing that no longer exists). Update the happy-path test and the check-6 boundary test to reflect uniform `getTokenBalance` usage.
+- **`src/services/balanceService.test.ts`:** add wSOL-alias tests — happy path (Ultra) and RPC fallback (Ultra down).
+- **No UI, state, or contract change.** The `BalanceMap` shape, `getSolBalance` contract, and preflight semantics are unchanged.
+
+**Why safe to change a closed contract:**
+`getTokenBalance` is called in exactly one place today (`preflightChecks.ts` check 7). Passing the wSOL mint previously returned `0` (buggy); now it returns the correct balance. No caller that relied on the old broken behavior exists — A-8 documented the bug, and the current preflight branch was the workaround being unwound.
+
+**Files affected:**
+- `src/services/balanceService.ts` — alias wSOL mint in `getTokenBalance`.
+- `src/services/balanceService.test.ts` — 2 new cases.
+- `src/handlers/preflightChecks.ts` — drop `WRAPPED_SOL_MINT` constant, drop check-7 ternary.
+- `src/handlers/preflightChecks.test.ts` — remove 3 handler-level aliasing tests, update 2 existing tests to match simplified flow.
+- `docs/amendments.md` — this entry (closes the A-8 follow-up).

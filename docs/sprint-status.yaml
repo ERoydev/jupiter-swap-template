@@ -49,7 +49,7 @@ epics:
         slug: preflight-checks-transaction-signing
         title: "Pre-flight Checks + Transaction Signing"
         size: M
-        status: backlog
+        status: done
         wave: 3
         dependencies: ["2-1", "2-3"]
       - id: "3-2"
@@ -83,3 +83,10 @@ epics:
         status: backlog
         wave: 4
         dependencies: ["3-3", "4-1"]
+      - id: "4-3"
+        slug: user-controlled-slippage
+        title: "User-Controlled Slippage Tolerance"
+        size: M
+        status: done
+        wave: 4
+        dependencies: ["3-1"]
