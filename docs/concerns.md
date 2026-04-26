@@ -175,3 +175,33 @@ story 2-3 QA. Design input recommended before picking between
 `variant="destructive"`, `variant="default"`, or `variant="secondary"`.
 
 **Revisit:** Design-system polish pass OR bundle with C-6 AlertAction fix.
+
+---
+
+## C-8 — 2026-04-26 — `--success` design token absent; SuccessDisplay uses hardcoded Tailwind palette
+
+**Story:** 3-2 (Task 2 — SuccessDisplay component)
+**Severity:** Low
+**Files:** `src/ui/SuccessDisplay.tsx`, `src/components/ui/alert.tsx`, `src/globals.css`
+
+Design-system §14 Organism 3 specifies "Success: Alert (green border)" and
+§15 Alert variants list `success (green)` alongside `destructive` and
+`warning`. `globals.css` defines `--destructive` and `--warning` tokens but
+no `--success` token, and `alert.tsx` exposes only `default` and
+`destructive` variants — no `success` variant exists.
+
+To ship SuccessDisplay without a Rule-4 architectural amendment to the
+design system, the component uses Tailwind's `border-emerald-500/40` plus
+`bg-emerald-50/50 dark:bg-emerald-950/20` utilities directly. This works
+across all four themes (verified at build time), but it bypasses the
+project's "use design tokens, never hardcode colors" convention from
+react.md and CLAUDE.md.
+
+**Why deferred:** Adding a `--success` token requires a four-theme audit
+(wireframe-light, wireframe-dark, brand-light, brand-dark) and a follow-up
+to wire a `success` variant through `alert.tsx`'s `cva` config. That is a
+design-system change, not a feature change — out of 3-2 scope.
+
+**Revisit:** Story 4-1 (UX polish) OR a dedicated design-system polish pass.
+At that point, replace the inline emerald utilities in `SuccessDisplay`
+with `<Alert variant="success" />` and verify all four themes.
