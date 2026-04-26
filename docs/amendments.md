@@ -469,3 +469,47 @@ async getTokenBalance(publicKey, mint, signal?) {
 - `src/handlers/preflightChecks.ts` — drop `WRAPPED_SOL_MINT` constant, drop check-7 ternary.
 - `src/handlers/preflightChecks.test.ts` — remove 3 handler-level aliasing tests, update 2 existing tests to match simplified flow.
 - `docs/amendments.md` — this entry (closes the A-8 follow-up).
+
+## A-10 — 2026-04-26 — `executeOrder` return type tightened (`Promise<unknown>` → `Promise<ExecuteResponse>`) (Story 3-2)
+
+**Original contract** (Story 2-1, `src/services/jupiterService.ts:62-68`):
+
+```ts
+export async function executeOrder(
+  signedTx: string,
+  requestId: string,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return jupiterClient.post("/swap/v2/execute", { signedTransaction: signedTx, requestId }, signal);
+}
+```
+
+**Amended contract** (Story 3-2, Task 1):
+
+```ts
+export async function executeOrder(
+  signedTx: string,
+  requestId: string,
+  signal?: AbortSignal,
+): Promise<ExecuteResponse> {
+  return jupiterClient.post<ExecuteResponse>(
+    "/swap/v2/execute",
+    { signedTransaction: signedTx, requestId },
+    signal,
+  );
+}
+```
+
+**Why now:** Story 3-2 wires the `/execute` response into `SwapCard.handleSwap` and needs to read `status`, `code`, `signature`, `inputAmountResult`, and `outputAmountResult` to dispatch `EXECUTE_SUCCESS` / `EXECUTE_ERROR`. The `unknown` return type was a placeholder from 2-1 (when no consumer existed) and would force every caller to assert/cast at the call site. Tightening at the service layer is a one-line change with zero behavioral impact.
+
+**Why safe (Rule 3 per code-standards):**
+- The runtime payload was already an `ExecuteResponse` — the amendment is type-only.
+- `executeOrder` had **zero call sites** before 3-2 (verified: no imports of `executeOrder` in `src/`). No caller that asserted/narrowed `unknown` exists to break.
+- `jupiterClient.post<T>` already supports the generic; this just applies the `T` the caller would have asserted anyway.
+
+**Architecture alignment:** matches `docs/architecture.md` §Data Models and §API Contracts where `/execute` is documented to return `ExecuteResponse`.
+
+**Files affected:**
+- `src/services/jupiterService.ts` — return type tightened, `ExecuteResponse` import added.
+- `src/services/jupiterService.test.ts` — 3 new cases under `describe("jupiterService.executeOrder", ...)` covering POST contract, success-path return shape, and synchronous `ConfigError` when `VITE_JUPITER_API_KEY` is empty.
+- No downstream consumers exist yet — this amendment lands the type at the same time as Story 3-2 introduces the first call site (Task 4).

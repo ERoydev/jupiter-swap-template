@@ -1,6 +1,6 @@
 import { jupiterClient } from "./jupiterClient";
 import { ErrorType, SwapError } from "../types/errors";
-import type { OrderResponse } from "../types/swap";
+import type { ExecuteResponse, OrderResponse } from "../types/swap";
 
 interface GetOrderParams {
   inputMint: string;
@@ -63,8 +63,12 @@ export async function executeOrder(
   signedTx: string,
   requestId: string,
   signal?: AbortSignal,
-): Promise<unknown> {
-  return jupiterClient.post("/swap/v2/execute", { signedTransaction: signedTx, requestId }, signal);
+): Promise<ExecuteResponse> {
+  return jupiterClient.post<ExecuteResponse>(
+    "/swap/v2/execute",
+    { signedTransaction: signedTx, requestId },
+    signal,
+  );
 }
 
 export { ErrorType, SwapError };
