@@ -3,7 +3,7 @@
   "flow": "greenfield",
   "version": "next-2.0",
   "created": "2026-04-14T06:44:29.255Z",
-  "lastUpdated": "2026-04-24T12:39:57Z",
+  "lastUpdated": "2026-04-24T12:49:25.976Z",
   "currentPhase": "implement",
   "currentStep": null,
   "currentCheckpoint": null,
@@ -265,6 +265,20 @@
       "id": "58d71ad1-2864-4ae4-b849-41ac11987f4d",
       "transcript": "/Users/emilemilovroydev/.claude/projects/-Users-emilemilovroydev-Rust-projects-Solana-swap-integration-templates-jupiter-swap-template/58d71ad1-2864-4ae4-b849-41ac11987f4d.jsonl",
       "firstSeenAt": "2026-04-24T07:38:44.795Z"
+    },
+    {
+      "id": "b5f2e394-aa0e-4114-a540-0529fa5494f1",
+      "transcript": "/Users/emilemilovroydev/.claude/projects/-Users-emilemilovroydev-Rust-projects-Solana-swap-integration-templates-jupiter-swap-template/b5f2e394-aa0e-4114-a540-0529fa5494f1.jsonl",
+      "firstSeenAt": "2026-04-24T12:46:48.758Z"
+    },
+    {
+      "id": "3e4e280c-e03a-4c01-b8cf-1b7f35dab14e",
+      "transcript": "/Users/emilemilovroydev/.claude/projects/-Users-emilemilovroydev-Rust-projects-Solana-swap-integration-templates-jupiter-swap-template/3e4e280c-e03a-4c01-b8cf-1b7f35dab14e.jsonl",
+      "firstSeenAt": "2026-04-26T17:54:25.336Z"
     }
-  ]
+  ],
+  "compacted": {
+    "at": "2026-04-24T12:49:25.975Z",
+    "trigger": "unknown"
+  }
 }

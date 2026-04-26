@@ -1,0 +1,184 @@
+{
+  "companyAnnouncements": [
+    "  ██╗               ███╗   ███╗\n  ██║      ▄▀▄  ▀█▀ ████╗ ████║\n  ██║      █▀█   █  ██╔████╔██║\n  ██║      ▀ ▀  ▀▀▀ ██║╚██╔╝██║\n  ███████╗          ██║ ╚═╝ ██║\n  ╚══════╝          ╚═╝     ╚═╝\n\n  LaiM v1.6.1 — AI development framework by LimeChain\n  Commands: /start · /quick · /status"
+  ],
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+      "Bash(git:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(ugrep:*)",
+      "Bash(bfs:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(mkdir:*)",
+      "Bash(mv:*)",
+      "Bash(cp:*)",
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(pnpm:*)",
+      "Bash(yarn:*)",
+      "Bash(bun:*)",
+      "Bash(deno:*)",
+      "Bash(go:*)",
+      "Bash(cargo:*)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(pip:*)",
+      "Bash(pytest:*)",
+      "Bash(make:*)",
+      "Bash(just:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(rm -rf ~)",
+      "Bash(sudo:*)",
+      "Bash(curl * | sh)",
+      "Bash(wget * | sh)",
+      "Bash(cat *.env*)",
+      "Bash(cat */.env*)",
+      "Bash(head *.env*)",
+      "Bash(head */.env*)",
+      "Bash(tail *.env*)",
+      "Bash(tail */.env*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/suggest-compact.sh || bash ~/.claude/hooks/suggest-compact.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Edit(**/state.json)|Write(**/state.json)|Edit(**/.quick-state.json)|Write(**/.quick-state.json)",
+            "command": "bash .claude/hooks/validate-state.sh || bash ~/.claude/hooks/validate-state.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/laim-content-guard.sh || bash ~/.claude/hooks/laim-content-guard.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Read(*.env*)|Read(*credentials*)|Read(*secrets*)|Read(*secret.*)|Read(*private_key*)|Read(*.pem)|Read(*.key)|Read(*.p12)|Read(*.pfx)|Read(*.jks)|Read(*.keystore)|Read(id_rsa*)|Read(id_ed25519*)|Read(id_ecdsa*)|Read(*token.*)|Read(*tokens.*)|Read(.npmrc)|Read(.pypirc)",
+            "command": "bash .claude/hooks/block-sensitive-reads.sh || bash ~/.claude/hooks/block-sensitive-reads.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/laim-bash-guard.sh || bash ~/.claude/hooks/laim-bash-guard.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/laim-context-monitor.cjs || node ~/.claude/hooks/laim-context-monitor.cjs"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/laim-verify-checks.sh || bash ~/.claude/hooks/laim-verify-checks.sh"
+          }
+        ]
+      }
+    ],
+    "FileChanged": [
+      {
+        "matcher": "architecture.md|spec.md|plan.md|state.json",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/laim-artifact-monitor.cjs || node ~/.claude/hooks/laim-artifact-monitor.cjs"
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/laim-stop-failure.cjs || node ~/.claude/hooks/laim-stop-failure.cjs"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/laim-post-compact.cjs || node ~/.claude/hooks/laim-post-compact.cjs"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/laim-subagent-tracker.cjs || node ~/.claude/hooks/laim-subagent-tracker.cjs"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/laim-session-tracker.cjs || node ~/.claude/hooks/laim-session-tracker.cjs"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "node .claude/hooks/laim-statusline.cjs || node ~/.claude/hooks/laim-statusline.cjs"
+  }
+}
