@@ -119,7 +119,7 @@ describe("SwapButton — preflight error labels", () => {
 });
 
 describe("SwapButton — in-flight states", () => {
-  it("renders 'Waiting for wallet…' disabled when state is Signing", () => {
+  it("renders 'Waiting for wallet…' disabled with an aria-hidden spinner when state is Signing", () => {
     render(
       <SwapButton
         state={SwapState.Signing}
@@ -131,9 +131,12 @@ describe("SwapButton — in-flight states", () => {
     const btn = screen.getByRole("button", { name: /swap tokens/i });
     expect((btn as HTMLButtonElement).disabled).toBe(true);
     expect(btn.textContent).toBe("Waiting for wallet…");
+    const spinner = btn.querySelector("svg[aria-hidden='true']");
+    expect(spinner).not.toBeNull();
+    expect(spinner!.classList.contains("animate-spin")).toBe(true);
   });
 
-  it("renders 'Executing swap…' disabled when state is Executing", () => {
+  it("renders 'Executing swap…' disabled with an aria-hidden spinner when state is Executing", () => {
     render(
       <SwapButton
         state={SwapState.Executing}
@@ -145,6 +148,15 @@ describe("SwapButton — in-flight states", () => {
     const btn = screen.getByRole("button", { name: /swap tokens/i });
     expect((btn as HTMLButtonElement).disabled).toBe(true);
     expect(btn.textContent).toBe("Executing swap…");
+    const spinner = btn.querySelector("svg[aria-hidden='true']");
+    expect(spinner).not.toBeNull();
+    expect(spinner!.classList.contains("animate-spin")).toBe(true);
+  });
+
+  it("does NOT render a spinner when state is QuoteReady (idle/ready)", () => {
+    render(<SwapButton {...passingDefaults()} />);
+    const btn = screen.getByRole("button", { name: /swap tokens/i });
+    expect(btn.querySelector("svg[aria-hidden='true']")).toBeNull();
   });
 });
 

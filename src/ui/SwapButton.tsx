@@ -1,3 +1,4 @@
+import { Loader2 } from "lucide-react";
 import { Tooltip } from "@base-ui/react/tooltip";
 import { Button } from "@/components/ui/button";
 import { SwapState } from "../state/swapState";
@@ -99,6 +100,7 @@ export function SwapButton({
   onClick,
 }: SwapButtonProps) {
   const surface = deriveSurface(state, hasQuote, preflightError);
+  const inFlight = state === SwapState.Signing || state === SwapState.Executing;
 
   const button = (
     <Button
@@ -109,6 +111,9 @@ export function SwapButton({
       aria-label="Swap tokens"
       onClick={surface.disabled ? undefined : onClick}
     >
+      {inFlight && (
+        <Loader2 aria-hidden="true" className="mr-2 h-4 w-4 animate-spin" />
+      )}
       {surface.label}
     </Button>
   );
