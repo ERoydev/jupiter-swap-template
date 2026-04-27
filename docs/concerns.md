@@ -205,3 +205,37 @@ design-system change, not a feature change — out of 3-2 scope.
 **Revisit:** Story 4-1 (UX polish) OR a dedicated design-system polish pass.
 At that point, replace the inline emerald utilities in `SuccessDisplay`
 with `<Alert variant="success" />` and verify all four themes.
+
+---
+
+## C-9 — 2026-04-27 — Toast notification on success deferred to Story 4-1
+
+**Story:** 3-2 (code review round-1 finding #4 — Dev Note #2 commitment)
+**Severity:** Low
+**File:** `src/ui/SuccessDisplay.tsx` (TODO breadcrumb), `src/App.tsx`
+
+Plan AC-3-2-2 wording references "Toast also fires" alongside the success
+Alert. `package.json` carried no toast library at story-3-2 implementation
+time (no `sonner`, `react-hot-toast`, or `@base-ui/react/toast` — verified
+during story creation). Adding a toast library mid-story (Rule 4 —
+architectural dependency change) was rejected; the success Alert
+satisfies the user-facing intent ("user knows the swap succeeded") on
+its own.
+
+The `// TODO(4-1): fire toast` breadcrumb in `SuccessDisplay.tsx`
+(near `<AlertTitle>`) is the code-side handle. This entry is the
+docs-side handle.
+
+**Why deferred:**
+- Toast is a redundant signal next to a green Alert with the same
+  information; not load-bearing for the AC.
+- 4-1 ("Pre-flight UX + Responsive Layout") is the right owner — it's
+  the polish sweep where toast library selection (sonner vs.
+  base-ui vs. radix) gets evaluated against the four-theme constraint.
+
+**Revisit:** Story 4-1.
+- Pick a toast library that respects the four design-system themes
+  (wireframe-light/dark + brand-light/dark).
+- Wire in `SuccessDisplay.tsx` next to the existing Alert title.
+- Verify the toast doesn't double-announce for screen readers (the
+  Alert already has `role="alert"` aria-live=assertive default).

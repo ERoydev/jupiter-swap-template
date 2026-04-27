@@ -92,7 +92,20 @@ export function useSwapExecution({
       return;
     }
 
-    if (!publicKey || !context.quote || !context.quote.transaction) return;
+    if (!publicKey || !context.quote || !context.quote.transaction) {
+      // Code review #2 (Medium): every other path in this orchestration emits
+      // a structured log line; this invariant guard was the only silent exit.
+      // A user reporting "I clicked Swap and nothing happened" left no trace
+      // in the console. The dispatch flag stays no-op (the state is already
+      // inconsistent — surfacing a SwapError would imply a fixable failure)
+      // but the log gives an investigator a grep target.
+      logSwap("swap_aborted_invariant_violated", {
+        hasPublicKey: !!publicKey,
+        hasQuote: !!context.quote,
+        hasTransaction: !!context.quote?.transaction,
+      });
+      return;
+    }
 
     logSwap("swap_started", {
       inputMint: inputToken.id,

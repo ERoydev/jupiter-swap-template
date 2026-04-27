@@ -922,6 +922,13 @@ describe("SwapCard — Story 3-2 execute flow (AC-3-2-1, 3-2-2, 3-2-3, 3-2-4)", 
       for (let i = 0; i < 4; i++) await Promise.resolve();
     });
 
+    // Code review #9 (Medium): assert the dimmed input wrappers carry the
+    // `inert` attribute (post round-1 fix). Without this, a regression that
+    // re-introduces `aria-hidden` (or drops the attribute entirely) would
+    // ship green even though the a11y bug is back.
+    const inertWrappers = container.querySelectorAll("[inert]");
+    expect(inertWrappers.length).toBeGreaterThanOrEqual(1);
+
     // executeOrder is held in flight — panel should be visible with the
     // Executing-phase copy, NOT the Signing-phase copy.
     const inFlightStatus = screen.queryAllByRole("status").find((el) =>

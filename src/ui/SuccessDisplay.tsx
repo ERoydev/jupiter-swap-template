@@ -38,6 +38,9 @@ export function SuccessDisplay({
   return (
     <Alert className="border-emerald-500/40 bg-emerald-50/50 dark:bg-emerald-950/20">
       <AlertTitle>Swap successful</AlertTitle>
+      {/* TODO(4-1): fire toast notification on success per spec AC-FR-9 ("Toast also fires").
+          Deferred from 3-2 because no toast library was installed at the time of writing.
+          See docs/concerns.md C-9 and docs/stories/3-2-execute-flow-success-display.md Dev Note #2. */}
       <AlertDescription>
         <DetailList className="mt-2">
           <DetailRow label="Sent" value={`${sent} ${inputSymbol}`} />
