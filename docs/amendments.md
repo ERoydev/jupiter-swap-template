@@ -763,3 +763,81 @@ known-misleading error message in 3-2.
 When 3-3 implements the retry loop, `response.error` should also
 appear in retry-attempt diagnostics ("Attempt 2 failed: …"). Today's
 amendment is the data layer; 3-3 is the experience layer.
+
+---
+
+## A-14 — 2026-04-27 — `swapHandler` extraction permanently deferred; orchestration stays in `useSwapExecution` (Story 3-3)
+
+**Original architecture decision** (`docs/architecture.md` §Component Decomposition + A-11):
+
+A-11 (Story 3-2) deferred the standalone `swapHandler` module
+extraction to Story 3-3, on the expectation that 3-3's retry loop
+would force a "do one /execute attempt N times" pattern requiring a
+pure handler with a return-type contract:
+`{ kind: "success" } | { kind: "error" } | { kind: "retry-eligible" }`.
+
+**Amended behavior** (Story 3-3, Task 1):
+
+The retry loop did NOT force a second consumer. The retry decision is
+a single branching dispatch *inside* the existing `handleSwap`
+callback — `mapping.retryable && context.retryCount < MAX_RETRIES - 1`
+gates between EXECUTE_RETRY (with `retry_scheduled` log) and
+EXECUTE_ERROR (with `retry_exhausted` or `non_retryable_error` log).
+There is no second caller of "do one /execute attempt"; the orchestration
+remains a coherent unit inside `useSwapExecution`. This amendment closes
+A-11's revisit clause: `swapHandler` extraction is permanently deferred
+(no follow-up story owns it).
+
+**Why no extraction:**
+
+1. **Single caller, single dispatch tree.** The retry decision is
+   inline at the failure site — there's nothing to call multiple times.
+2. **State coupling unchanged.** `useSwapExecution` still owns
+   `lastSwapResult` state and the `swapCorrelationId` lifecycle. A
+   handler module would still need a wrapper.
+3. **Net code growth in the hook is small** (~50 lines for the canRetry
+   gate + retry/exhausted logs in both response-branch and catch-block
+   paths). Hook stays well under 350 lines.
+4. **Future trigger preserved.** If a second consumer ever emerges
+   (analytics-only retry probe, retry-test-harness, etc.), the
+   extraction remains a clean refactor — but speculative work.
+
+**Why safe (Rule 3 per code-standards):**
+
+- No external symbol named `swapHandler` exists; nothing imports it.
+- A-11's "Revisit (Story 3-3)" clause is explicitly closed by this
+  entry; future readers won't expect a pending extraction.
+- All 8 must_haves of the trimmed S-sized 3-3 satisfied at the
+  behavior level by the in-hook implementation.
+
+**Files affected:**
+
+- `src/hooks/useSwapExecution.ts` — `MAX_RETRIES` import added; the
+  response-branch and catch-block both gain the canRetry predicate +
+  three new log events (`retry_scheduled`, `retry_exhausted`,
+  `non_retryable_error`); `retriesAttempted: context.retryCount` is
+  appended to `error.details` on the budget-exhausted path so future
+  consumers (4-1 ErrorDisplay refactor, log analysis) can read the
+  count after EXECUTE_ERROR has reset `context.retryCount` to 0.
+- `src/App.tsx` — adds `MAX_RETRIES` and `Loader2` imports; the first-
+  load skeleton condition gains a `retryCount === 0` clause; a sibling
+  retry-progress block renders "Retrying… attempt {retryCount + 1} of
+  {MAX_RETRIES}" with a `Loader2` spinner during LoadingQuote with
+  `retryCount > 0`.
+- `src/App.test.tsx` — two pre-3-3 tests (retryable -1000 and thrown
+  NetworkError) updated in place: their assertions flipped from
+  "error visible" to "error suppressed by retry", with the misleading
+  "(NOT EXECUTE_RETRY)" parenthetical removed from test names. Four
+  new cases under `describe("SwapCard — Story 3-3 retry logic")`:
+  retry happy path (fail then success), retry exhausted (3 consecutive
+  failures + retry_exhausted log + retriesAttempted), non-retryable
+  immediate error + non_retryable_error log, retry-progress copy
+  visibility during in-between LoadingQuote.
+
+**Trim context:**
+
+The original M-sized 3-3 included a dedicated `ErrorDisplay` component
+refactor + a standalone `useSwapExecution.test.ts` file. User-approved
+trim to S deferred both to C-10 (logged at story close). The retry
+behavior itself ships intact — the deferred work is presentational
+polish + test-file-organization, not behavior.

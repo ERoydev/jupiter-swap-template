@@ -62,8 +62,8 @@ epics:
       - id: "3-3"
         slug: retry-logic-error-recovery
         title: "Retry Logic + Error Recovery"
-        size: M
-        status: backlog
+        size: S
+        status: in-progress
         wave: 3
         dependencies: ["3-2"]
   - id: 4
