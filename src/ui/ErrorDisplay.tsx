@@ -35,7 +35,7 @@ export function ErrorDisplay({ error, onDismiss }: ErrorDisplayProps) {
                 type="button"
                 onClick={onDismiss}
                 className={cn(
-                    "mt-2 text-xs text-muted-foreground underline",
+                    "mt-2 inline-flex min-h-11 items-center px-2 text-xs text-muted-foreground underline",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm",
                 )}
             >

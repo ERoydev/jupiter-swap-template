@@ -240,6 +240,8 @@ docs-side handle.
 - Verify the toast doesn't double-announce for screen readers (the
   Alert already has `role="alert"` aria-live=assertive default).
 
+**Won't fix** (2026-04-27, Story 4-1 Task 3): sonner was installed and `toast.success(...)` wired in `SuccessDisplay.useEffect`, but during manual testing the user confirmed the result was bad UX — two prominent "Swap successful" announcements on the same screen (the existing destructive `<Alert>` in SwapCard plus the toast in the bottom-right corner). The toast wiring was reverted: sonner uninstalled, `<Toaster />` mount removed, `useEffect` removed from `SuccessDisplay.tsx`, three sonner-mock tests removed. The original spec line "Toast also fires" alongside the existing Alert was rejected as duplicative. If a non-blocking notification is wanted in the future, the right path is to slim the SwapCard Alert to a small receipt strip (drop the AlertTitle "Swap successful") and let a future toast carry the celebration — that change was out of scope for 4-1's polish remit and would re-open SuccessDisplay's information architecture.
+
 ---
 
 ## C-10 — 2026-04-27 — ErrorDisplay component refactor + standalone hook test file deferred (Story 3-3 trim)
@@ -306,3 +308,5 @@ trimmed S edit deferred without losing 3-3's behavioral payload:
   `useSwapExecution.test.ts` with `renderHook` and migrate the
   retry-decision branching cases out of App.test.tsx, or accept
   the integration coverage as sufficient. Decide during 4-1.
+
+**Resolved**: Story 4-1 Task 1 — `src/ui/ErrorDisplay.tsx` extracted, reads `error.details?.retriesAttempted`, escalates title to 'Swap failed after 3 attempts' on retry budget exhaustion. The standalone `useSwapExecution.test.ts` remains default-skipped per original C-10 clause; integration coverage in App.test.tsx + the existing 3-3 retry tests is sufficient. 2026-04-27

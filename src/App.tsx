@@ -389,7 +389,7 @@ export function SwapCard() {
                     value={inputAmount}
                     onChange={(e) => handleAmountChange(e.target.value)}
                     placeholder="0.00"
-                    className="w-full bg-transparent text-xl font-medium text-foreground outline-none placeholder:text-muted-foreground mt-1 min-h-11"
+                    className="w-full bg-transparent text-xl font-medium text-foreground outline-none placeholder:text-muted-foreground mt-1 min-h-11 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     aria-label={`Amount of ${inputToken.symbol} to swap`}
                 />
             </div>
