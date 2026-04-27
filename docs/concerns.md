@@ -175,3 +175,67 @@ story 2-3 QA. Design input recommended before picking between
 `variant="destructive"`, `variant="default"`, or `variant="secondary"`.
 
 **Revisit:** Design-system polish pass OR bundle with C-6 AlertAction fix.
+
+---
+
+## C-8 — 2026-04-26 — `--success` design token absent; SuccessDisplay uses hardcoded Tailwind palette
+
+**Story:** 3-2 (Task 2 — SuccessDisplay component)
+**Severity:** Low
+**Files:** `src/ui/SuccessDisplay.tsx`, `src/components/ui/alert.tsx`, `src/globals.css`
+
+Design-system §14 Organism 3 specifies "Success: Alert (green border)" and
+§15 Alert variants list `success (green)` alongside `destructive` and
+`warning`. `globals.css` defines `--destructive` and `--warning` tokens but
+no `--success` token, and `alert.tsx` exposes only `default` and
+`destructive` variants — no `success` variant exists.
+
+To ship SuccessDisplay without a Rule-4 architectural amendment to the
+design system, the component uses Tailwind's `border-emerald-500/40` plus
+`bg-emerald-50/50 dark:bg-emerald-950/20` utilities directly. This works
+across all four themes (verified at build time), but it bypasses the
+project's "use design tokens, never hardcode colors" convention from
+react.md and CLAUDE.md.
+
+**Why deferred:** Adding a `--success` token requires a four-theme audit
+(wireframe-light, wireframe-dark, brand-light, brand-dark) and a follow-up
+to wire a `success` variant through `alert.tsx`'s `cva` config. That is a
+design-system change, not a feature change — out of 3-2 scope.
+
+**Revisit:** Story 4-1 (UX polish) OR a dedicated design-system polish pass.
+At that point, replace the inline emerald utilities in `SuccessDisplay`
+with `<Alert variant="success" />` and verify all four themes.
+
+---
+
+## C-9 — 2026-04-27 — Toast notification on success deferred to Story 4-1
+
+**Story:** 3-2 (code review round-1 finding #4 — Dev Note #2 commitment)
+**Severity:** Low
+**File:** `src/ui/SuccessDisplay.tsx` (TODO breadcrumb), `src/App.tsx`
+
+Plan AC-3-2-2 wording references "Toast also fires" alongside the success
+Alert. `package.json` carried no toast library at story-3-2 implementation
+time (no `sonner`, `react-hot-toast`, or `@base-ui/react/toast` — verified
+during story creation). Adding a toast library mid-story (Rule 4 —
+architectural dependency change) was rejected; the success Alert
+satisfies the user-facing intent ("user knows the swap succeeded") on
+its own.
+
+The `// TODO(4-1): fire toast` breadcrumb in `SuccessDisplay.tsx`
+(near `<AlertTitle>`) is the code-side handle. This entry is the
+docs-side handle.
+
+**Why deferred:**
+- Toast is a redundant signal next to a green Alert with the same
+  information; not load-bearing for the AC.
+- 4-1 ("Pre-flight UX + Responsive Layout") is the right owner — it's
+  the polish sweep where toast library selection (sonner vs.
+  base-ui vs. radix) gets evaluated against the four-theme constraint.
+
+**Revisit:** Story 4-1.
+- Pick a toast library that respects the four design-system themes
+  (wireframe-light/dark + brand-light/dark).
+- Wire in `SuccessDisplay.tsx` next to the existing Alert title.
+- Verify the toast doesn't double-announce for screen readers (the
+  Alert already has `role="alert"` aria-live=assertive default).

@@ -38,6 +38,19 @@ vi.mock("./handlers/transactionSigner", () => ({
   transactionSigner: { sign: vi.fn().mockResolvedValue("signed-base64") },
 }));
 
+// Story 3-2 Task 4: partial-mock jupiterService so executeOrder is mockable
+// per-test while getOrder remains its real implementation (it goes through
+// the global fetch mock used by AC-2 and AC-7 cases above).
+vi.mock("./services/jupiterService", async () => {
+  const actual = await vi.importActual<
+    typeof import("./services/jupiterService")
+  >("./services/jupiterService");
+  return {
+    ...actual,
+    executeOrder: vi.fn(),
+  };
+});
+
 vi.mock("./hooks/useTokenSearch", () => ({
   useTokenSearch: vi.fn(() => ({
     data: undefined,
@@ -99,6 +112,7 @@ import { SwapCard } from "./App";
 import { useWalletBalances } from "./hooks/useWalletBalances";
 import { preflightChecks } from "./handlers/preflightChecks";
 import { transactionSigner } from "./handlers/transactionSigner";
+import { executeOrder } from "./services/jupiterService";
 import { ErrorType, SwapError } from "./types/errors";
 
 // SwapCard uses useQueryClient for blue-chip prefetch — wrap in a provider.
@@ -685,5 +699,289 @@ describe("SwapCard — Task 4 swap orchestration (AC-3-1-1, 3-1-5)", () => {
       el.textContent?.includes("You need at least 0.01 SOL"),
     );
     expect(preflightErrAlert).toBeDefined();
+  });
+});
+
+// ─── Story 3-2 / Task 4: execute flow + success display ──────────────────────
+
+const SUCCESSFUL_EXECUTE_RESPONSE = {
+  status: "Success" as const,
+  signature: "5VfYSFjV9bbmU3pH8sFv2J5sYNxYi3DGhVSdH5LpHF6m4q1xTk8wZqLzQyJtR7nWcK3vBpA9eXfHsGdNuMrTbY1z",
+  code: 0,
+  inputAmountResult: "1000000000",
+  outputAmountResult: "17057460",
+};
+
+async function clickSwapAndDrain(container: HTMLElement) {
+  await act(async () => {
+    vi.advanceTimersByTime(300); // drain debounced preflight so button enables
+    await Promise.resolve();
+  });
+
+  const swapBtn = container.querySelector(
+    "button[aria-label='Swap tokens']",
+  ) as HTMLButtonElement;
+  expect(swapBtn).not.toBeNull();
+
+  await act(async () => {
+    fireEvent.click(swapBtn);
+    // Drain microtasks for: click-preflight, sign, executeOrder, dispatches
+    for (let i = 0; i < 6; i++) {
+      await Promise.resolve();
+    }
+  });
+}
+
+describe("SwapCard — Story 3-2 execute flow (AC-3-2-1, 3-2-2, 3-2-3, 3-2-4)", () => {
+  beforeEach(() => {
+    vi.mocked(preflightChecks.run).mockClear().mockResolvedValue(undefined);
+    vi.mocked(transactionSigner.sign).mockClear().mockResolvedValue("signed-base64");
+    vi.mocked(executeOrder).mockReset();
+  });
+
+  it("happy path: dispatches EXECUTE_SUCCESS and renders SuccessDisplay with Solscan link (AC-3-2-1, AC-3-2-2)", async () => {
+    vi.mocked(executeOrder).mockResolvedValueOnce(SUCCESSFUL_EXECUTE_RESPONSE);
+
+    const container = await setupConnectedWithQuote();
+    await clickSwapAndDrain(container);
+
+    // executeOrder called with signed tx + requestId from the quote
+    expect(vi.mocked(executeOrder)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(executeOrder).mock.calls[0]?.[0]).toBe("signed-base64");
+    expect(vi.mocked(executeOrder).mock.calls[0]?.[1]).toBe(
+      validQuoteResponse.requestId,
+    );
+
+    // SuccessDisplay rendered: alert with "Swap successful" + Solscan anchor
+    const alerts = screen.queryAllByRole("alert");
+    const successAlert = alerts.find((el) =>
+      el.textContent?.includes("Swap successful"),
+    );
+    expect(successAlert).toBeDefined();
+
+    const solscan = container.querySelector("a[href*='solscan.io/tx/']") as HTMLAnchorElement;
+    expect(solscan).not.toBeNull();
+    expect(solscan.href).toContain(SUCCESSFUL_EXECUTE_RESPONSE.signature);
+  });
+
+  it("retryable failure: dispatches EXECUTE_ERROR (NOT EXECUTE_RETRY) on code -1000 (AC-3-2-1)", async () => {
+    vi.mocked(executeOrder).mockResolvedValueOnce({
+      status: "Failed",
+      signature: "",
+      code: -1000,
+      inputAmountResult: "0",
+      outputAmountResult: "0",
+    });
+
+    const container = await setupConnectedWithQuote();
+    await clickSwapAndDrain(container);
+
+    // Error alert renders the mapped message
+    const alerts = screen.queryAllByRole("alert");
+    const errorAlert = alerts.find((el) =>
+      el.textContent?.includes("Transaction didn't land"),
+    );
+    expect(errorAlert).toBeDefined();
+
+    // SuccessDisplay must NOT render
+    const successAlert = alerts.find((el) =>
+      el.textContent?.includes("Swap successful"),
+    );
+    expect(successAlert).toBeUndefined();
+  });
+
+  it("surfaces Jupiter's response.error verbatim instead of the generic mapped message (A-13)", async () => {
+    vi.mocked(executeOrder).mockResolvedValueOnce({
+      status: "Failed",
+      signature: "",
+      code: -2002,
+      inputAmountResult: "0",
+      outputAmountResult: "0",
+      error: "Slippage tolerance exceeded",
+    });
+
+    const container = await setupConnectedWithQuote();
+    await clickSwapAndDrain(container);
+
+    const alerts = screen.queryAllByRole("alert");
+    // A-13: response.error wins over mapping.message ("Transaction error. Please try again.")
+    const slippageAlert = alerts.find((el) =>
+      el.textContent?.includes("Slippage tolerance exceeded"),
+    );
+    expect(slippageAlert).toBeDefined();
+    // Sanity: the generic mapped fallback should NOT appear when response.error is set
+    const genericAlert = alerts.find(
+      (el) =>
+        el.textContent?.includes("Transaction error. Please try again.") &&
+        !el.textContent?.includes("Slippage"),
+    );
+    expect(genericAlert).toBeUndefined();
+  });
+
+  it("uses mapping.message when response.error is absent or empty (A-13 fallback)", async () => {
+    vi.mocked(executeOrder).mockResolvedValueOnce({
+      status: "Failed",
+      signature: "",
+      code: -2002,
+      inputAmountResult: "0",
+      outputAmountResult: "0",
+      // no `error` field
+    });
+
+    const container = await setupConnectedWithQuote();
+    await clickSwapAndDrain(container);
+
+    const alerts = screen.queryAllByRole("alert");
+    const fallbackAlert = alerts.find((el) =>
+      el.textContent?.includes("Transaction error. Please try again."),
+    );
+    expect(fallbackAlert).toBeDefined();
+  });
+
+  it("includes the numeric code in the fallback message for unknown codes (A-13)", async () => {
+    vi.mocked(executeOrder).mockResolvedValueOnce({
+      status: "Failed",
+      signature: "",
+      code: -9999, // not in ERROR_MAP
+      inputAmountResult: "0",
+      outputAmountResult: "0",
+    });
+
+    const container = await setupConnectedWithQuote();
+    await clickSwapAndDrain(container);
+
+    const alerts = screen.queryAllByRole("alert");
+    const codedAlert = alerts.find((el) =>
+      el.textContent?.includes("code: -9999"),
+    );
+    expect(codedAlert).toBeDefined();
+  });
+
+  it("non-retryable failure: dispatches EXECUTE_ERROR on code -2 (AC-3-2-1)", async () => {
+    vi.mocked(executeOrder).mockResolvedValueOnce({
+      status: "Failed",
+      signature: "",
+      code: -2,
+      inputAmountResult: "0",
+      outputAmountResult: "0",
+    });
+
+    const container = await setupConnectedWithQuote();
+    await clickSwapAndDrain(container);
+
+    const alerts = screen.queryAllByRole("alert");
+    const errorAlert = alerts.find((el) =>
+      el.textContent?.includes("Transaction error"),
+    );
+    expect(errorAlert).toBeDefined();
+  });
+
+  it("network throw: passes thrown SwapError(NetworkError) through to EXECUTE_ERROR (AC-3-2-1)", async () => {
+    vi.mocked(executeOrder).mockRejectedValueOnce(
+      new SwapError(
+        ErrorType.NetworkError,
+        "Network error. Check your connection.",
+        undefined,
+        true,
+      ),
+    );
+
+    const container = await setupConnectedWithQuote();
+    await clickSwapAndDrain(container);
+
+    const alerts = screen.queryAllByRole("alert");
+    const errorAlert = alerts.find((el) =>
+      el.textContent?.includes("Network error"),
+    );
+    expect(errorAlert).toBeDefined();
+  });
+
+  it("renders SwapInFlightPanel ('Confirming on Solana…') during Executing and unmounts on Success (A-12)", async () => {
+    let resolveExec: (
+      v: typeof SUCCESSFUL_EXECUTE_RESPONSE,
+    ) => void = () => {};
+    vi.mocked(executeOrder).mockImplementationOnce(
+      () =>
+        new Promise<typeof SUCCESSFUL_EXECUTE_RESPONSE>((res) => {
+          resolveExec = res;
+        }),
+    );
+
+    const container = await setupConnectedWithQuote();
+    await act(async () => {
+      vi.advanceTimersByTime(300);
+      await Promise.resolve();
+    });
+
+    const swapBtn = container.querySelector(
+      "button[aria-label='Swap tokens']",
+    ) as HTMLButtonElement;
+
+    await act(async () => {
+      fireEvent.click(swapBtn);
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+    });
+
+    // Code review #9 (Medium): assert the dimmed input wrappers carry the
+    // `inert` attribute (post round-1 fix). Without this, a regression that
+    // re-introduces `aria-hidden` (or drops the attribute entirely) would
+    // ship green even though the a11y bug is back.
+    const inertWrappers = container.querySelectorAll("[inert]");
+    expect(inertWrappers.length).toBeGreaterThanOrEqual(1);
+
+    // executeOrder is held in flight — panel should be visible with the
+    // Executing-phase copy, NOT the Signing-phase copy.
+    const inFlightStatus = screen.queryAllByRole("status").find((el) =>
+      el.textContent?.includes("Confirming on Solana"),
+    );
+    expect(inFlightStatus).toBeDefined();
+
+    // Resolve the deferred /execute call
+    await act(async () => {
+      resolveExec(SUCCESSFUL_EXECUTE_RESPONSE);
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+    });
+
+    // Panel unmounted; SuccessDisplay rendered
+    const stillInFlight = screen.queryAllByRole("status").find((el) =>
+      el.textContent?.includes("Confirming on Solana"),
+    );
+    expect(stillInFlight).toBeUndefined();
+
+    const successAlert = screen.queryAllByRole("alert").find((el) =>
+      el.textContent?.includes("Swap successful"),
+    );
+    expect(successAlert).toBeDefined();
+  });
+
+  it("NEW_SWAP from Success unmounts SuccessDisplay and clears lastSwapResult (AC-3-2-3)", async () => {
+    vi.mocked(executeOrder).mockResolvedValueOnce(SUCCESSFUL_EXECUTE_RESPONSE);
+
+    const container = await setupConnectedWithQuote();
+    await clickSwapAndDrain(container);
+
+    // Sanity: SuccessDisplay is mounted
+    let successAlert = screen.queryAllByRole("alert").find((el) =>
+      el.textContent?.includes("Swap successful"),
+    );
+    expect(successAlert).toBeDefined();
+
+    // Click "Start a new swap"
+    const newSwapBtn = container.querySelector(
+      "button[aria-label='Start a new swap']",
+    ) as HTMLButtonElement;
+    expect(newSwapBtn).not.toBeNull();
+
+    await act(async () => {
+      fireEvent.click(newSwapBtn);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // SuccessDisplay unmounted
+    successAlert = screen.queryAllByRole("alert").find((el) =>
+      el.textContent?.includes("Swap successful"),
+    );
+    expect(successAlert).toBeUndefined();
   });
 });

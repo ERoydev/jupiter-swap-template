@@ -21,8 +21,10 @@ import { TokenSelectorModal } from "./ui/TokenSelector";
 import { useSwapState } from "./state/useSwapState";
 import { getOrder } from "./services/jupiterService";
 import { preflightChecks } from "./handlers/preflightChecks";
-import { transactionSigner } from "./handlers/transactionSigner";
 import { prefetchBlueChipTokens } from "./hooks/useTokenSearch";
+import { useSwapExecution } from "./hooks/useSwapExecution";
+import { SuccessDisplay } from "./ui/SuccessDisplay";
+import { SwapInFlightPanel } from "./ui/SwapInFlightPanel";
 import { SwapState } from "./state/swapState";
 import { ErrorType, SwapError } from "./types/errors";
 import { SOLANA_RPC_URL } from "./config/env";
@@ -31,28 +33,16 @@ import {
     DEFAULT_OUTPUT_TOKEN,
     DEFAULT_SLIPPAGE_BPS,
     QUOTE_REFRESH_INTERVAL_MS,
-    STALE_THRESHOLD_MS,
 } from "./config/constants";
+import { parsePositiveAmount } from "./utils/parseAmount";
 import type { TokenInfo } from "./types/tokens";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
 
 const DEBOUNCE_MS = 300;
 
-// Strict decimal matcher for the user-typed amount. Accepts `1`, `1.5`, `.5`;
-// rejects `1.5abc` (which parseFloat silently truncates to 1.5). Used at every
-// boundary where we convert the raw input string to lamports.
-const POSITIVE_DECIMAL_RE = /^(?:\d+(?:\.\d+)?|\.\d+)$/;
-
-function parsePositiveAmount(raw: string): number | null {
-    const trimmed = raw.trim();
-    if (!POSITIVE_DECIMAL_RE.test(trimmed)) return null;
-    const n = parseFloat(trimmed);
-    return Number.isFinite(n) && n > 0 ? n : null;
-}
-
 export function SwapCard() {
-    const { publicKey, connected, signTransaction } = useWallet();
+    const { publicKey, connected } = useWallet();
     const { setVisible: setWalletModalVisible } = useWalletModal();
     const { context, dispatch } = useSwapState();
     const [inputAmount, setInputAmount] = useState("");
@@ -270,6 +260,13 @@ export function SwapCard() {
         (context.state === SwapState.QuoteReady ||
             context.state === SwapState.LoadingQuote);
     const hasError = context.state === SwapState.Error;
+    // True between sign-click and success/error — the user-visible "something
+    // is happening" window. Drives both the SwapInFlightPanel mount and the
+    // dimming of the input/output/slippage blocks (A-12).
+    const inFlight =
+        context.state === SwapState.Signing ||
+        context.state === SwapState.Executing;
+    const inFlightDim = inFlight ? "opacity-60 pointer-events-none" : "";
 
     // Auto-refresh quote every QUOTE_REFRESH_INTERVAL_MS while QuoteReady + tab visible.
     // Pauses while hidden to avoid burning RPC; immediately refetches on tab refocus.
@@ -314,97 +311,14 @@ export function SwapCard() {
         fetchQuote,
     ]);
 
-    const handleSwap = useCallback(async () => {
-        // 1. Stale-quote gate (>30s since fetch) — refresh and bail out early.
-        //    Intentionally short-circuits before step 2: the debounced preflight
-        //    effect will re-run against the fresh quote once it lands, so the
-        //    next user click is gated on a preflight result that reflects
-        //    current-balance + current-quote. This is why step 2 only executes
-        //    on the fresh-quote branch.
-        if (
-            context.quoteFetchedAt !== null &&
-            Date.now() - context.quoteFetchedAt > STALE_THRESHOLD_MS
-        ) {
-            dispatch({ type: "FETCH_QUOTE" });
-            const staleParsed = parsePositiveAmount(inputAmount);
-            if (staleParsed !== null) {
-                const lamports = Math.floor(
-                    staleParsed * 10 ** inputToken.decimals,
-                ).toString();
-                void fetchQuote(lamports);
-            }
-            return;
-        }
-
-        if (!publicKey || !context.quote || !context.quote.transaction) return;
-
-        // 2. Authoritative fresh preflight at click time.
-        const parsedAmount = parsePositiveAmount(inputAmount) ?? 0;
-        const amountLamports = Math.floor(
-            parsedAmount * 10 ** inputToken.decimals,
-        ).toString();
-        try {
-            await preflightChecks.run(
-                {
-                    inputMint: inputToken.id,
-                    outputMint: outputToken.id,
-                    amount: amountLamports,
-                    inputDecimals: inputToken.decimals,
-                    inputSymbol: inputToken.symbol,
-                },
-                { connected, publicKey },
-            );
-        } catch (err: unknown) {
-            const swapErr =
-                err instanceof SwapError
-                    ? err
-                    : new SwapError(ErrorType.UnknownError, "Preflight failed");
-            dispatch({ type: "PREFLIGHT_FAILED", error: swapErr });
-            return;
-        }
-
-        // 3. Sign.
-        dispatch({ type: "START_SIGNING" });
-        try {
-            await transactionSigner.sign(context.quote.transaction, {
-                signTransaction,
-            });
-        } catch (err: unknown) {
-            const swapErr =
-                err instanceof SwapError
-                    ? err
-                    : new SwapError(
-                          ErrorType.WalletRejected,
-                          "Signature request failed",
-                      );
-            dispatch({ type: "SIGNING_ERROR", error: swapErr });
-            return;
-        }
-
-        // 4. TODO(3-2): call jupiterService.executeOrder with the signed tx.
-        // For now dispatch a placeholder so the UI returns to a recoverable Error
-        // state instead of stalling in Signing. Story 3-2 removes this placeholder.
-        dispatch({
-            type: "SIGNING_ERROR",
-            error: new SwapError(
-                ErrorType.UnknownError,
-                "Execute flow not yet implemented (story 3-2)",
-            ),
-        });
-    }, [
-        context.quoteFetchedAt,
-        context.quote,
-        inputAmount,
-        inputToken.id,
-        inputToken.decimals,
-        inputToken.symbol,
-        outputToken.id,
-        publicKey,
-        connected,
-        signTransaction,
+    const { handleSwap, lastSwapResult } = useSwapExecution({
+        context,
         dispatch,
+        inputToken,
+        outputToken,
+        inputAmount,
         fetchQuote,
-    ]);
+    });
 
     return (
         <div className="w-full max-w-[420px] rounded-lg border border-border bg-card p-4 space-y-4">
@@ -429,7 +343,10 @@ export function SwapCard() {
             </div>
 
             {/* Input amount */}
-            <div className="border border-border rounded-lg p-3">
+            <div
+                className={`border border-border rounded-lg p-3 ${inFlightDim}`}
+                inert={inFlight || undefined}
+            >
                 <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">
                         You pay
@@ -455,7 +372,10 @@ export function SwapCard() {
             </div>
 
             {/* Output display */}
-            <div className="border border-border rounded-lg p-3">
+            <div
+                className={`border border-border rounded-lg p-3 ${inFlightDim}`}
+                inert={inFlight || undefined}
+            >
                 <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">
                         You receive
@@ -484,7 +404,10 @@ export function SwapCard() {
 
             {/* Slippage tolerance (A-7). Layout-agnostic component — move/restyle
                 this wrapper freely without touching SlippageSelector internals. */}
-            <div className="border-t border-border pt-3 space-y-2">
+            <div
+                className={`border-t border-border pt-3 space-y-2 ${inFlightDim}`}
+                inert={inFlight || undefined}
+            >
                 <span className="text-xs text-muted-foreground">
                     Slippage tolerance
                 </span>
@@ -509,21 +432,32 @@ export function SwapCard() {
                 </div>
             )}
 
-            {/* Quote details */}
-            {hasQuote && context.quote && (
-                <QuoteDisplay
-                    quote={context.quote}
-                    inputSymbol={inputToken.symbol}
-                    outputSymbol={outputToken.symbol}
-                    inputAmount={Math.floor(
-                        (parsePositiveAmount(inputAmount) ?? 0) *
-                            10 ** inputToken.decimals,
-                    ).toString()}
-                    inputDecimals={inputToken.decimals}
-                    outputDecimals={outputToken.decimals}
-                    quoteFetchedAt={context.quoteFetchedAt}
-                    fallbackSlippageBps={slippageBps}
+            {/* Quote details — replaced by the in-flight panel during sign/execute (A-12). */}
+            {inFlight ? (
+                <SwapInFlightPanel
+                    mode={
+                        context.state === SwapState.Signing
+                            ? "signing"
+                            : "executing"
+                    }
                 />
+            ) : (
+                hasQuote &&
+                context.quote && (
+                    <QuoteDisplay
+                        quote={context.quote}
+                        inputSymbol={inputToken.symbol}
+                        outputSymbol={outputToken.symbol}
+                        inputAmount={Math.floor(
+                            (parsePositiveAmount(inputAmount) ?? 0) *
+                                10 ** inputToken.decimals,
+                        ).toString()}
+                        inputDecimals={inputToken.decimals}
+                        outputDecimals={outputToken.decimals}
+                        quoteFetchedAt={context.quoteFetchedAt}
+                        fallbackSlippageBps={slippageBps}
+                    />
+                )
             )}
 
             {/* Error state */}
@@ -543,6 +477,20 @@ export function SwapCard() {
                     </button>
                 </div>
             )}
+
+            {/* Success state — mounted between Error and the Swap/Connect CTA. */}
+            {context.state === SwapState.Success &&
+                context.txSignature !== null &&
+                lastSwapResult !== null && (
+                    <SuccessDisplay
+                        result={lastSwapResult}
+                        inputSymbol={inputToken.symbol}
+                        inputDecimals={inputToken.decimals}
+                        outputSymbol={outputToken.symbol}
+                        outputDecimals={outputToken.decimals}
+                        onNewSwap={() => dispatch({ type: "NEW_SWAP" })}
+                    />
+                )}
 
             {/* Swap / Connect button */}
             {!connected ? (
