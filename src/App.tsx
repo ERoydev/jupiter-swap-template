@@ -345,7 +345,7 @@ export function SwapCard() {
             {/* Input amount */}
             <div
                 className={`border border-border rounded-lg p-3 ${inFlightDim}`}
-                aria-hidden={inFlight || undefined}
+                inert={inFlight || undefined}
             >
                 <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">
@@ -374,7 +374,7 @@ export function SwapCard() {
             {/* Output display */}
             <div
                 className={`border border-border rounded-lg p-3 ${inFlightDim}`}
-                aria-hidden={inFlight || undefined}
+                inert={inFlight || undefined}
             >
                 <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">
@@ -406,7 +406,7 @@ export function SwapCard() {
                 this wrapper freely without touching SlippageSelector internals. */}
             <div
                 className={`border-t border-border pt-3 space-y-2 ${inFlightDim}`}
-                aria-hidden={inFlight || undefined}
+                inert={inFlight || undefined}
             >
                 <span className="text-xs text-muted-foreground">
                     Slippage tolerance
