@@ -2,7 +2,7 @@
 id: "3-3-retry-logic-error-recovery"
 slug: retry-logic-error-recovery
 title: "Retry Logic + Error Recovery"
-status: draft
+status: done
 size: S
 wave: 3
 complexity: high
@@ -135,7 +135,7 @@ Computed 2026-04-27 from source on disk. Implementer should re-check hashes befo
 
 ## Tasks
 
-- [ ] **Task 1: Wire retry decision into useSwapExecution + retry-progress copy in App.tsx**
+- [x] **Task 1: Wire retry decision into useSwapExecution + retry-progress copy in App.tsx**
   - Maps to: AC-3-3-1, AC-3-3-2, AC-3-3-3, AC-3-3-4, AC-3-3-6.
   - Files modified:
     - `src/hooks/useSwapExecution.ts`:
@@ -175,7 +175,7 @@ Computed 2026-04-27 from source on disk. Implementer should re-check hashes befo
   - Per Dev Note #5: file Rule 3 amendment in this commit closing the A-11 swapHandler-extraction follow-up. Append entry to `docs/amendments.md` as A-14.
   - Commit: `feat(retry): wire retry decision and retry-progress copy via useSwapExecution`
 
-- [ ] **Task 2: Manual verification + close**
+- [x] **Task 2: Manual verification + close**
   - Not test-producing; documentation/verification only.
   - Run all manual verification steps below. Confirm full `npm test` passes (no regressions vs. baseline 281).
   - Append concern C-10 to `docs/concerns.md` (deferred ErrorDisplay refactor + dedicated hook-test file). Suggest 4-1 as pickup candidate.
