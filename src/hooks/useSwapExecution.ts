@@ -316,6 +316,26 @@ export function useSwapExecution({
         return;
       }
 
+      // Code review M-1: parity with the response branch — when a thrown
+      // retryable error exhausts the budget (e.g., 3 consecutive NetworkError
+      // throws on a flaky mainnet day), rebuild the SwapError so
+      // details.retriesAttempted is set. Without this, downstream consumers
+      // (4-1 ErrorDisplay refactor, log analysis) would see undefined for
+      // the catch-branch path while seeing 2 for the response-branch path.
+      const finalErr =
+        swapErr.retryable
+          ? new SwapError(
+              swapErr.type,
+              swapErr.message,
+              swapErr.code,
+              swapErr.retryable,
+              {
+                ...(swapErr.details ?? {}),
+                retriesAttempted: context.retryCount,
+              },
+            )
+          : swapErr;
+
       if (swapErr.retryable) {
         logSwap("retry_exhausted", {
           totalAttempts: context.retryCount + 1,
@@ -328,7 +348,7 @@ export function useSwapExecution({
         });
       }
 
-      dispatch({ type: "EXECUTE_ERROR", error: swapErr });
+      dispatch({ type: "EXECUTE_ERROR", error: finalErr });
     }
   }, [
     context.quoteFetchedAt,

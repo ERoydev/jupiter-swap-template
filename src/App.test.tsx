@@ -1193,4 +1193,71 @@ describe("SwapCard — Story 3-3 retry logic (AC-3-3-1, 3-3-2, 3-3-3, 3-3-4, 3-3
     );
     expect(retryStatusAfter).toBeUndefined();
   });
+
+  it("3 consecutive thrown SwapError(NetworkError, retryable=true) → exhaust budget via catch branch (M-1 parity)", async () => {
+    // Code review M-1: the catch branch must mirror the response branch's
+    // budget-exhaustion behavior. Three consecutive thrown retryable errors
+    // should fire 2× retry_scheduled + 1× retry_exhausted (totalAttempts:3),
+    // then dispatch EXECUTE_ERROR with the user-facing message visible.
+    // Without the M-1 fix, the catch branch would drop retriesAttempted
+    // from error.details (only the response branch attached it).
+    const logSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+
+    const networkError = () =>
+      new SwapError(
+        ErrorType.NetworkError,
+        "Network error. Check your connection.",
+        undefined,
+        true,
+      );
+
+    vi.mocked(executeOrder)
+      .mockRejectedValueOnce(networkError())
+      .mockRejectedValueOnce(networkError())
+      .mockRejectedValueOnce(networkError());
+
+    const container = await setupConnectedWithQuote();
+
+    // Attempt 1 → catch → EXECUTE_RETRY → refetch
+    await clickSwapAndDrain(container);
+    await act(async () => {
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+
+    // Attempt 2 → catch → EXECUTE_RETRY → refetch
+    await clickSwapAndDrain(container);
+    await act(async () => {
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+
+    // Attempt 3 → catch → final EXECUTE_ERROR (budget exhausted)
+    await clickSwapAndDrain(container);
+
+    expect(vi.mocked(executeOrder)).toHaveBeenCalledTimes(3);
+
+    // Error visible after attempt 3 — NetworkError message surfaces verbatim
+    const alerts = screen.queryAllByRole("alert");
+    const errorAlert = alerts.find((el) =>
+      el.textContent?.includes("Network error"),
+    );
+    expect(errorAlert).toBeDefined();
+
+    // Log assertions: the catch branch fires the same observability events
+    // as the response branch (2× retry_scheduled, 1× retry_exhausted).
+    const logCalls = logSpy.mock.calls.map((args) => String(args[0] ?? ""));
+    const retryScheds = logCalls.filter((s) =>
+      s.includes('"retry_scheduled"'),
+    );
+    expect(retryScheds.length).toBe(2);
+    const exhaustedLog = logCalls.find((s) =>
+      s.includes('"retry_exhausted"'),
+    );
+    expect(exhaustedLog).toBeDefined();
+    expect(exhaustedLog).toContain('"totalAttempts":3');
+    // The catch-branch retry_exhausted log carries errorType (not code)
+    // since thrown SwapError doesn't always have a numeric code.
+    expect(exhaustedLog).toContain('"errorType":"NetworkError"');
+
+    logSpy.mockRestore();
+  });
 });
