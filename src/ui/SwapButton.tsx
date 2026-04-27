@@ -109,11 +109,17 @@ export function SwapButton({
   const tooltipId = useId();
   const describedBy = surface.tooltip !== null ? tooltipId : undefined;
 
+  // Use aria-disabled (not the HTML disabled attribute) so the button stays
+  // focusable. A focusable disabled button lets keyboard + screen-reader users
+  // tab to it, which opens the base-ui Tooltip on focus, mounts the popup in
+  // the DOM, and lets aria-describedby actually resolve to the tooltip text.
+  // The HTML disabled attribute would skip the button in tab order entirely,
+  // breaking the announcement chain. Click activation is already guarded by
+  // the surface.disabled check below.
   const button = (
     <Button
-      className="w-full min-h-11"
+      className="w-full min-h-11 aria-disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:pointer-events-auto"
       size="lg"
-      disabled={surface.disabled}
       aria-disabled={surface.disabled}
       aria-label="Swap tokens"
       aria-describedby={describedBy}

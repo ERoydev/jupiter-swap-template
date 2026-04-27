@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
 interface SlippageSelectorProps {
     value: number;
@@ -104,62 +103,12 @@ export function SlippageSelector({ value, onChange }: SlippageSelectorProps) {
 
     const customLabel = isCustomActive ? `${(value / 100).toString()}%` : "Custom";
     const errorId = "slippage-custom-error";
-    const groupRef = useRef<HTMLDivElement | null>(null);
-
-    // Arrow-key navigation across the radiogroup (3 numeric presets + custom).
-    // WAI-ARIA radiogroup semantics expect ArrowLeft/ArrowRight (and
-    // optionally Home/End) to move focus and selection between radios.
-    // Wrapping is intentional — matches the pill-row UX. While Custom is in
-    // edit mode, the input owns Enter/Escape (commitCustom/cancel), so we
-    // skip group-level arrow handling there.
-    function handleGroupKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
-        if (editingCustom) return;
-        const key = e.key;
-        if (
-            key !== "ArrowLeft" &&
-            key !== "ArrowRight" &&
-            key !== "Home" &&
-            key !== "End"
-        ) {
-            return;
-        }
-        const root = groupRef.current;
-        if (!root) return;
-        const buttons = Array.from(
-            root.querySelectorAll<HTMLButtonElement>("button[aria-pressed]"),
-        );
-        if (buttons.length === 0) return;
-        const activeEl = document.activeElement as HTMLElement | null;
-        const currentIndex = activeEl ? buttons.indexOf(activeEl as HTMLButtonElement) : -1;
-        let nextIndex: number;
-        if (key === "Home") {
-            nextIndex = 0;
-        } else if (key === "End") {
-            nextIndex = buttons.length - 1;
-        } else if (key === "ArrowRight") {
-            nextIndex =
-                currentIndex < 0 ? 0 : (currentIndex + 1) % buttons.length;
-        } else {
-            // ArrowLeft
-            nextIndex =
-                currentIndex < 0
-                    ? buttons.length - 1
-                    : (currentIndex - 1 + buttons.length) % buttons.length;
-        }
-        const target = buttons[nextIndex];
-        if (!target) return;
-        e.preventDefault();
-        target.focus();
-        target.click();
-    }
 
     return (
         <div
-            ref={groupRef}
             role="radiogroup"
             aria-label="Slippage tolerance"
             className="flex gap-2"
-            onKeyDown={handleGroupKeyDown}
         >
             {PRESETS.map((p) => {
                 const active = value === p.bps && !editingCustom;

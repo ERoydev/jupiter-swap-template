@@ -2,6 +2,7 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { act, render, cleanup, fireEvent, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useIsMobile } from "./hooks/use-mobile";
 
 // Mocks must be hoisted before the SwapCard import
 const mockUseWallet = vi.fn();
@@ -34,8 +35,11 @@ vi.mock("@solana/wallet-adapter-react-ui/styles.css", () => ({}));
 // mobile collapsed layout; mocking the hook to a stable `false` lets every App
 // test exercise the desktop branch (which mirrors the legacy always-expanded
 // behaviour assumed by these tests) without touching jsdom internals.
+// useIsMobile is a `vi.fn()` (not a fixed arrow) so individual tests can flip
+// it to `true` via `vi.mocked(useIsMobile).mockReturnValueOnce(true)` to
+// exercise the mobile QuoteDisplay branch (Story 4-1, Task 2 — AC-5).
 vi.mock("./hooks/use-mobile", () => ({
-  useIsMobile: () => false,
+  useIsMobile: vi.fn(() => false),
 }));
 
 // Task 4 orchestration: mock handlers so tests can assert dispatch wiring
@@ -1268,5 +1272,22 @@ describe("SwapCard — Story 3-3 retry logic (AC-3-3-1, 3-3-2, 3-3-3, 3-3-4, 3-3
     expect(exhaustedLog).toContain('"errorType":"NetworkError"');
 
     logSpy.mockRestore();
+  });
+});
+
+// ─── Story 4-1 Task 2: AC-5 mobile QuoteDisplay integration ──────────────────
+// Unit-level coverage of the collapse behaviour lives in QuoteDisplay.test.tsx.
+// This integration check ensures App.tsx actually wires QuoteDisplay through
+// to the mobile branch when useIsMobile() flips — guards the wiring, not the
+// component (per code review #3).
+describe("SwapCard — Story 4-1 mobile QuoteDisplay (AC-5)", () => {
+  it("renders the 'Show details' toggle when useIsMobile() is true and a quote is loaded", async () => {
+    vi.mocked(useIsMobile).mockReturnValue(true);
+    await setupConnectedWithQuote();
+    const toggle = screen.queryByRole("button", { name: /show details/i });
+    expect(toggle).not.toBeNull();
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    // Reset for any subsequent test in this run that expects the desktop default.
+    vi.mocked(useIsMobile).mockReturnValue(false);
   });
 });
