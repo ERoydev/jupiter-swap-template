@@ -24,6 +24,7 @@ import { getOrder } from "./services/jupiterService";
 import { preflightChecks } from "./handlers/preflightChecks";
 import { prefetchBlueChipTokens } from "./hooks/useTokenSearch";
 import { useSwapExecution } from "./hooks/useSwapExecution";
+import { ErrorDisplay } from "./ui/ErrorDisplay";
 import { SuccessDisplay } from "./ui/SuccessDisplay";
 import { SwapInFlightPanel } from "./ui/SwapInFlightPanel";
 import { SwapState } from "./state/swapState";
@@ -486,20 +487,10 @@ export function SwapCard() {
 
             {/* Error state */}
             {hasError && context.error && (
-                <div
-                    className="rounded-lg border border-destructive bg-destructive/10 p-3"
-                    role="alert"
-                >
-                    <p className="text-sm text-destructive font-medium">
-                        {context.error.message}
-                    </p>
-                    <button
-                        onClick={() => dispatch({ type: "DISMISS" })}
-                        className="text-xs text-muted-foreground underline mt-1"
-                    >
-                        Dismiss
-                    </button>
-                </div>
+                <ErrorDisplay
+                    error={context.error}
+                    onDismiss={() => dispatch({ type: "DISMISS" })}
+                />
             )}
 
             {/* Success state — mounted between Error and the Swap/Connect CTA. */}

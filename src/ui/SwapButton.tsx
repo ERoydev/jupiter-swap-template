@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { Loader2 } from "lucide-react";
 import { Tooltip } from "@base-ui/react/tooltip";
 import { Button } from "@/components/ui/button";
@@ -101,6 +102,12 @@ export function SwapButton({
 }: SwapButtonProps) {
   const surface = deriveSurface(state, hasQuote, preflightError);
   const inFlight = state === SwapState.Signing || state === SwapState.Executing;
+  // Stable id linking the disabled button to its tooltip popup so screen
+  // readers announce *why* the swap is blocked. The tooltip popup renders in
+  // a portal, so a plain DOM-relative description would be lost; an id-based
+  // aria-describedby survives the portal hop.
+  const tooltipId = useId();
+  const describedBy = surface.tooltip !== null ? tooltipId : undefined;
 
   const button = (
     <Button
@@ -109,6 +116,7 @@ export function SwapButton({
       disabled={surface.disabled}
       aria-disabled={surface.disabled}
       aria-label="Swap tokens"
+      aria-describedby={describedBy}
       onClick={surface.disabled ? undefined : onClick}
     >
       {inFlight && (
@@ -132,6 +140,8 @@ export function SwapButton({
         <Tooltip.Portal>
           <Tooltip.Positioner>
             <Tooltip.Popup
+              id={tooltipId}
+              role="tooltip"
               className="rounded bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md"
             >
               {surface.tooltip}
