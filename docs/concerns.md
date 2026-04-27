@@ -240,6 +240,8 @@ docs-side handle.
 - Verify the toast doesn't double-announce for screen readers (the
   Alert already has `role="alert"` aria-live=assertive default).
 
+**Won't fix** (2026-04-27, Story 4-1 Task 3): sonner was installed and `toast.success(...)` wired in `SuccessDisplay.useEffect`, but during manual testing the user confirmed the result was bad UX — two prominent "Swap successful" announcements on the same screen (the existing destructive `<Alert>` in SwapCard plus the toast in the bottom-right corner). The toast wiring was reverted: sonner uninstalled, `<Toaster />` mount removed, `useEffect` removed from `SuccessDisplay.tsx`, three sonner-mock tests removed. The original spec line "Toast also fires" alongside the existing Alert was rejected as duplicative. If a non-blocking notification is wanted in the future, the right path is to slim the SwapCard Alert to a small receipt strip (drop the AlertTitle "Swap successful") and let a future toast carry the celebration — that change was out of scope for 4-1's polish remit and would re-open SuccessDisplay's information architecture.
+
 ---
 
 ## C-10 — 2026-04-27 — ErrorDisplay component refactor + standalone hook test file deferred (Story 3-3 trim)
@@ -306,3 +308,33 @@ trimmed S edit deferred without losing 3-3's behavioral payload:
   `useSwapExecution.test.ts` with `renderHook` and migrate the
   retry-decision branching cases out of App.test.tsx, or accept
   the integration coverage as sufficient. Decide during 4-1.
+
+**Resolved**: Story 4-1 Task 1 — `src/ui/ErrorDisplay.tsx` extracted, reads `error.details?.retriesAttempted`, escalates title to 'Swap failed after 3 attempts' on retry budget exhaustion. The standalone `useSwapExecution.test.ts` remains default-skipped per original C-10 clause; integration coverage in App.test.tsx + the existing 3-3 retry tests is sufficient. 2026-04-27
+
+---
+
+## C-11 — 2026-04-27 — `flashSuccess` ref mutation inside effect — readability only (Story 4-1 code review)
+
+**Story:** 4-1 Task 2 (in-flight panel polish + success border flash)
+**Severity:** Low
+**File:** `src/App.tsx:281-292` (the `useEffect` that toggles `flashSuccess` on Executing/Signing → Success)
+
+**Reviewer's note (code review #2):** The effect captures `prevStateRef.current` for transition detection (Executing/Signing → Success), then unconditionally writes the new state to the ref before checking the transition. The order is correct (`wasInFlight` reads the OLD value first, then ref is updated, then the if-branch fires `setFlashSuccess`). But the unconditional ref write inside an effect-with-deps `[context.state]` is non-obvious — a future maintainer adding an early-return above it could break the transition detection silently.
+
+**No bug today.** Just a maintainability note.
+
+**Revisit:** if more cross-state animations are added (e.g., LoadingQuote → QuoteReady fade, Error → Idle fade), extract the prev-state tracking into a small `useTransition(from, to): boolean` helper. Until then, leave a comment at line 285 noting the unconditional write is intentional.
+
+---
+
+## C-12 — 2026-04-27 — `border-emerald-500` not a theme token (Story 4-1 code review)
+
+**Story:** 4-1 Task 2 (success border flash)
+**Severity:** Low
+**Files:** `src/App.tsx:402` (output panel flash), `src/ui/SuccessDisplay.tsx:55` (existing precedent)
+
+**Issue:** Both the success-flash on the output panel and the existing SuccessDisplay Alert use `border-emerald-500` directly — a Tailwind palette color, not a theme-token-driven CSS variable. The codebase currently has 2 themes (light + dark via `:root` + `.dark`); both render green fine, so there is no user-visible problem.
+
+**Why this is debt anyway:** the design system spec (`docs/design-system.md`) gestures at "all four themes must work" — that's currently aspirational (only 2 themes shipped), but if a wireframe/monochrome theme is added later, the emerald-500 color will visually break the theme boundary in two places.
+
+**Revisit:** when adding a wireframe theme (or any non-colorful theme), define a `--success` / `--success-border` CSS variable in `globals.css`, then replace `border-emerald-500` with `border-success` (or equivalent Tailwind class that reads the variable) at both call sites. Estimated cost: ~15 minutes including theme-toggle smoke test.

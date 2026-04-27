@@ -1,4 +1,5 @@
 import { Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface SwapInFlightPanelProps {
   mode: "signing" | "executing";
@@ -24,9 +25,14 @@ const COPY: Record<
  * "wallet hasn't responded yet" from "wallet signed, network is confirming".
  *
  * Pulled into Story 3-2 (per A-12) because button-text-only feedback during
- * the 1–3s in-flight window felt invisible in manual testing. The card-level
- * backdrop overlay, slide-in animation, and output-border flash-green still
- * belong to Story 4-1.
+ * the 1–3s in-flight window felt invisible in manual testing. Story 4-1 added
+ * the slide-in/fade-in mount animation; the dimming + inert lock on the rest
+ * of the form (input/output/slippage blocks) is applied by App.tsx around its
+ * own wrappers (`opacity-60 pointer-events-none` + `inert`), so this panel
+ * does not need to render its own backdrop overlay.
+ *
+ * All animation classes are guarded by the `motion-safe:` Tailwind variant so
+ * they no-op for users with `prefers-reduced-motion: reduce`.
  */
 export function SwapInFlightPanel({ mode }: SwapInFlightPanelProps) {
   const { heading, subtext } = COPY[mode];
@@ -35,7 +41,10 @@ export function SwapInFlightPanel({ mode }: SwapInFlightPanelProps) {
     <div
       role="status"
       aria-live="polite"
-      className="rounded-lg border border-border bg-muted/30 p-6 flex flex-col items-center gap-3 text-center"
+      className={cn(
+        "rounded-lg border border-border bg-muted/30 p-6 flex flex-col items-center gap-3 text-center",
+        "motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300",
+      )}
     >
       <Loader2
         aria-hidden="true"

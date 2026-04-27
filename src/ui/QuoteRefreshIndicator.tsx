@@ -23,7 +23,7 @@ export function QuoteRefreshIndicator({
             disabled={!canRefresh}
             aria-label="Refresh quote"
             aria-busy={isLoading}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
             <RefreshCw
                 className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}

@@ -33,7 +33,7 @@ describe("SwapButton — idle/no-quote", () => {
   it("renders 'Enter an amount' disabled when hasQuote is false", () => {
     render(<SwapButton {...noQuoteDefaults()} />);
     const btn = screen.getByRole("button", { name: /swap tokens/i });
-    expect((btn as HTMLButtonElement).disabled).toBe(true);
+    expect(btn.getAttribute("aria-disabled")).toBe("true");
     expect(btn.textContent).toBe("Enter an amount");
   });
 });
@@ -42,7 +42,7 @@ describe("SwapButton — happy path (all preflight checks pass)", () => {
   it("renders 'Swap' enabled when hasQuote + no preflightError", () => {
     render(<SwapButton {...passingDefaults()} />);
     const btn = screen.getByRole("button", { name: /swap tokens/i });
-    expect((btn as HTMLButtonElement).disabled).toBe(false);
+    expect(btn.getAttribute("aria-disabled")).toBe("false");
     expect(btn.textContent).toBe("Swap");
   });
 
@@ -113,7 +113,7 @@ describe("SwapButton — preflight error labels", () => {
       />,
     );
     const btn = screen.getByRole("button", { name: /swap tokens/i });
-    expect((btn as HTMLButtonElement).disabled).toBe(true);
+    expect(btn.getAttribute("aria-disabled")).toBe("true");
     expect(btn.textContent).toBe(expectedLabel);
   });
 });
@@ -129,7 +129,7 @@ describe("SwapButton — in-flight states", () => {
       />,
     );
     const btn = screen.getByRole("button", { name: /swap tokens/i });
-    expect((btn as HTMLButtonElement).disabled).toBe(true);
+    expect(btn.getAttribute("aria-disabled")).toBe("true");
     expect(btn.textContent).toBe("Waiting for wallet…");
     const spinner = btn.querySelector("svg[aria-hidden='true']");
     expect(spinner).not.toBeNull();
@@ -146,7 +146,7 @@ describe("SwapButton — in-flight states", () => {
       />,
     );
     const btn = screen.getByRole("button", { name: /swap tokens/i });
-    expect((btn as HTMLButtonElement).disabled).toBe(true);
+    expect(btn.getAttribute("aria-disabled")).toBe("true");
     expect(btn.textContent).toBe("Executing swap…");
     const spinner = btn.querySelector("svg[aria-hidden='true']");
     expect(spinner).not.toBeNull();
