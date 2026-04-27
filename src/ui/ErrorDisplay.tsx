@@ -11,9 +11,14 @@ export interface ErrorDisplayProps {
 /**
  * Surfaces a failed swap as an accessible destructive Alert with a Dismiss
  * action. When the underlying SwapError records a retry budget exhaustion
- * (retriesAttempted === MAX_RETRIES - 1, i.e. the 0-indexed last attempt),
- * the title escalates to "Swap failed after N attempts" so the user
- * understands the engine already exhausted its automatic retries.
+ * (retriesAttempted >= MAX_RETRIES - 1, i.e. the 0-indexed last attempt or
+ * any post-loop count), the title escalates to "Swap failed after N attempts"
+ * so the user understands the engine already exhausted its automatic retries.
+ *
+ * The `>=` guard (rather than strict `===`) tolerates either indexing
+ * convention from the producer: 0-indexed during-loop counters
+ * (`retriesAttempted = MAX_RETRIES - 1` on the final attempt) and any
+ * 1-indexed or post-loop totals (`retriesAttempted = MAX_RETRIES`).
  *
  * Extracted from the inline error block previously living in App.tsx
  * (Story 4-1, Task 1; addresses concern C-10).
@@ -22,7 +27,7 @@ export function ErrorDisplay({ error, onDismiss }: ErrorDisplayProps) {
     const retriesAttempted = readRetriesAttempted(error.details);
     const exhausted =
         typeof retriesAttempted === "number" &&
-        retriesAttempted === MAX_RETRIES - 1;
+        retriesAttempted >= MAX_RETRIES - 1;
     const title = exhausted
         ? `Swap failed after ${MAX_RETRIES} attempts`
         : "Swap failed";

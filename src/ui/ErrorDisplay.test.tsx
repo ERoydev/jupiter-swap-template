@@ -36,6 +36,20 @@ describe("ErrorDisplay", () => {
         ).toBeTruthy();
     });
 
+    it("renders 'Swap failed after 3 attempts' when retriesAttempted equals MAX_RETRIES (post-loop count tolerance)", () => {
+        const error = new SwapError(
+            ErrorType.ExecutionFailed,
+            "Transaction reverted",
+            undefined,
+            false,
+            { retriesAttempted: MAX_RETRIES },
+        );
+        render(<ErrorDisplay error={error} onDismiss={vi.fn()} />);
+        expect(
+            screen.getByText(`Swap failed after ${MAX_RETRIES} attempts`),
+        ).toBeTruthy();
+    });
+
     it("renders the error.message in the alert body", () => {
         const error = new SwapError(
             ErrorType.NetworkError,
