@@ -389,7 +389,7 @@ Computed from source on disk at 2026-04-26. Implementer should re-check hashes b
   - Depends on: Tasks 1, 2, 3.
   - Commit: `feat(app): wire executeOrder into handleSwap with success display and correlation ID`
 
-- [ ] **Task 5: Manual verification + sprint-status close**
+- [x] **Task 5: Manual verification + sprint-status close**
   - Not test-producing; documentation/verification only.
   - Run all 8 manual steps in "Manual Verification" below. Confirm full `npm test` passes (no regressions). Update `docs/state.json` to close story 3-2. Tag `post-jupiter-swap-template-3-2` after Gate 5 passes.
 
