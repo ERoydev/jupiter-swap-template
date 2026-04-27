@@ -10,7 +10,7 @@ import type { SwapAction, SwapStateContext } from "../state/swapReducer";
 import { ErrorType, SwapError } from "../types/errors";
 import type { SwapResult } from "../types/swap";
 import type { TokenInfo } from "../types/tokens";
-import { STALE_THRESHOLD_MS } from "../config/constants";
+import { MAX_RETRIES, STALE_THRESHOLD_MS } from "../config/constants";
 
 interface UseSwapExecutionParams {
   context: SwapStateContext;
@@ -219,15 +219,37 @@ export function useSwapExecution({
         return;
       }
 
-      // Non-success response: build SwapError via mapErrorCode and dispatch
-      // EXECUTE_ERROR. NOTE: do NOT dispatch EXECUTE_RETRY on retryable codes
-      // — Story 3-3 owns the retry loop.
+      // 3-3: gate retryable failures on the budget BEFORE building EXECUTE_ERROR.
+      // Retry decision lives here (not in the Error UI) because the reducer
+      // does not allow EXECUTE_RETRY from the Error state and EXECUTE_ERROR
+      // resets retryCount to 0 — making the Error state amnesic.
+      // Off-by-one: `< MAX_RETRIES - 1` because EXECUTE_RETRY itself increments.
       //
-      // A-13: prefer Jupiter's own `response.error` (e.g. "Slippage tolerance
-      // exceeded", "InsufficientFundsForRent") over our generic mapping.message.
-      // Falling back to mapping.message when the field is missing/empty so
-      // unknown codes still surface the canonical mapper output.
+      // A-13: prefer Jupiter's own `response.error` over generic mapping.message.
       const mapping = mapErrorCode(response.code);
+      const canRetry =
+        mapping.retryable && context.retryCount < MAX_RETRIES - 1;
+
+      if (canRetry) {
+        logSwap("retry_scheduled", {
+          code: response.code,
+          attempt: context.retryCount + 1,
+          requestId,
+        });
+        dispatch({ type: "EXECUTE_RETRY" });
+        // Trigger a fresh /order so the user can re-attempt with a new quote.
+        // Mirrors the stale-quote gate at the top of handleSwap.
+        const retryParsed = parsePositiveAmount(inputAmount);
+        if (retryParsed !== null) {
+          const lamports = Math.floor(
+            retryParsed * 10 ** inputToken.decimals,
+          ).toString();
+          void fetchQuote(lamports);
+        }
+        return;
+      }
+
+      // Budget exhausted (retryable but limit hit) OR non-retryable.
       const userMessage =
         response.error && response.error.trim().length > 0
           ? response.error.trim()
@@ -241,13 +263,24 @@ export function useSwapExecution({
           requestId,
           httpStatus: 200,
           responseBody: response,
+          ...(mapping.retryable
+            ? { retriesAttempted: context.retryCount }
+            : {}),
         },
       );
-      logSwap("execute_failed", {
-        code: response.code,
-        errorType: mapping.type,
-        retryable: mapping.retryable,
-      });
+
+      if (mapping.retryable) {
+        logSwap("retry_exhausted", {
+          totalAttempts: context.retryCount + 1,
+          code: response.code,
+        });
+      } else {
+        logSwap("non_retryable_error", {
+          code: response.code,
+          errorType: mapping.type,
+        });
+      }
+
       dispatch({ type: "EXECUTE_ERROR", error: swapErr });
     } catch (err: unknown) {
       const swapErr =
@@ -260,12 +293,62 @@ export function useSwapExecution({
               false,
               { thrown: String(err) },
             );
-      logSwap("execute_failed", {
-        errorType: swapErr.type,
-        message: swapErr.message,
-        thrown: !(err instanceof SwapError),
-      });
-      dispatch({ type: "EXECUTE_ERROR", error: swapErr });
+
+      // Mirror the response-branch retry gate so thrown retryable errors
+      // (e.g. NetworkError) get the same budget treatment.
+      const canRetry =
+        swapErr.retryable && context.retryCount < MAX_RETRIES - 1;
+
+      if (canRetry) {
+        logSwap("retry_scheduled", {
+          errorType: swapErr.type,
+          attempt: context.retryCount + 1,
+          requestId,
+        });
+        dispatch({ type: "EXECUTE_RETRY" });
+        const retryParsed = parsePositiveAmount(inputAmount);
+        if (retryParsed !== null) {
+          const lamports = Math.floor(
+            retryParsed * 10 ** inputToken.decimals,
+          ).toString();
+          void fetchQuote(lamports);
+        }
+        return;
+      }
+
+      // Code review M-1: parity with the response branch — when a thrown
+      // retryable error exhausts the budget (e.g., 3 consecutive NetworkError
+      // throws on a flaky mainnet day), rebuild the SwapError so
+      // details.retriesAttempted is set. Without this, downstream consumers
+      // (4-1 ErrorDisplay refactor, log analysis) would see undefined for
+      // the catch-branch path while seeing 2 for the response-branch path.
+      const finalErr =
+        swapErr.retryable
+          ? new SwapError(
+              swapErr.type,
+              swapErr.message,
+              swapErr.code,
+              swapErr.retryable,
+              {
+                ...(swapErr.details ?? {}),
+                retriesAttempted: context.retryCount,
+              },
+            )
+          : swapErr;
+
+      if (swapErr.retryable) {
+        logSwap("retry_exhausted", {
+          totalAttempts: context.retryCount + 1,
+          errorType: swapErr.type,
+        });
+      } else {
+        logSwap("non_retryable_error", {
+          errorType: swapErr.type,
+          message: swapErr.message,
+        });
+      }
+
+      dispatch({ type: "EXECUTE_ERROR", error: finalErr });
     }
   }, [
     context.quoteFetchedAt,

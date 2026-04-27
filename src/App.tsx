@@ -10,6 +10,7 @@ import {
     useWalletModal,
 } from "@solana/wallet-adapter-react-ui";
 import { PhantomWalletAdapter } from "@solana/wallet-adapter-wallets";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WalletButton } from "./ui/WalletButton";
 import { QuoteDisplay } from "./ui/QuoteDisplay";
@@ -32,6 +33,7 @@ import {
     DEFAULT_INPUT_TOKEN,
     DEFAULT_OUTPUT_TOKEN,
     DEFAULT_SLIPPAGE_BPS,
+    MAX_RETRIES,
     QUOTE_REFRESH_INTERVAL_MS,
 } from "./config/constants";
 import { parsePositiveAmount } from "./utils/parseAmount";
@@ -420,15 +422,37 @@ export function SwapCard() {
             {/* SOL balance fetch-failure warning (AC-5) */}
             <SolBalanceWarning />
 
-            {/* First-load skeleton only — hidden during refresh (A-6). */}
-            {isLoading && context.quote === null && (
+            {/* First-load skeleton only — hidden during refresh (A-6) and
+                during retry (3-3, where the retry-progress block below replaces it). */}
+            {isLoading &&
+                context.quote === null &&
+                context.retryCount === 0 && (
+                    <div
+                        className="space-y-2"
+                        role="status"
+                        aria-label="Loading quote"
+                    >
+                        <div className="h-4 w-3/4 rounded bg-muted animate-pulse" />
+                        <div className="h-4 w-1/2 rounded bg-muted animate-pulse" />
+                    </div>
+                )}
+
+            {/* Retry-progress copy (3-3): replaces the first-load skeleton when
+                EXECUTE_RETRY has cleared the quote and bumped retryCount. */}
+            {isLoading && context.retryCount > 0 && (
                 <div
-                    className="space-y-2"
+                    className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2"
                     role="status"
-                    aria-label="Loading quote"
+                    aria-live="polite"
                 >
-                    <div className="h-4 w-3/4 rounded bg-muted animate-pulse" />
-                    <div className="h-4 w-1/2 rounded bg-muted animate-pulse" />
+                    <Loader2
+                        className="h-4 w-4 animate-spin text-muted-foreground"
+                        aria-hidden="true"
+                    />
+                    <span className="text-sm text-muted-foreground">
+                        Retrying… attempt {context.retryCount + 1} of{" "}
+                        {MAX_RETRIES}
+                    </span>
                 </div>
             )}
 

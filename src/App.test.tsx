@@ -764,7 +764,11 @@ describe("SwapCard — Story 3-2 execute flow (AC-3-2-1, 3-2-2, 3-2-3, 3-2-4)", 
     expect(solscan.href).toContain(SUCCESSFUL_EXECUTE_RESPONSE.signature);
   });
 
-  it("retryable failure: dispatches EXECUTE_ERROR (NOT EXECUTE_RETRY) on code -1000 (AC-3-2-1)", async () => {
+  it("retryable -1000 first attempt → EXECUTE_RETRY, no error visible (3-3 supersedes 3-2)", async () => {
+    // 3-3: retryable codes on the first attempt no longer fall through to
+    // EXECUTE_ERROR — useSwapExecution dispatches EXECUTE_RETRY and the error
+    // UI stays hidden between attempts. Pre-3-3 this test asserted the
+    // opposite (error visible immediately); the assertion is flipped here.
     vi.mocked(executeOrder).mockResolvedValueOnce({
       status: "Failed",
       signature: "",
@@ -776,18 +780,21 @@ describe("SwapCard — Story 3-2 execute flow (AC-3-2-1, 3-2-2, 3-2-3, 3-2-4)", 
     const container = await setupConnectedWithQuote();
     await clickSwapAndDrain(container);
 
-    // Error alert renders the mapped message
+    // Error alert must NOT be visible — retry path suppressed it
     const alerts = screen.queryAllByRole("alert");
     const errorAlert = alerts.find((el) =>
       el.textContent?.includes("Transaction didn't land"),
     );
-    expect(errorAlert).toBeDefined();
+    expect(errorAlert).toBeUndefined();
 
-    // SuccessDisplay must NOT render
+    // SuccessDisplay must NOT render either
     const successAlert = alerts.find((el) =>
       el.textContent?.includes("Swap successful"),
     );
     expect(successAlert).toBeUndefined();
+
+    // executeOrder fired exactly once for the first attempt
+    expect(vi.mocked(executeOrder)).toHaveBeenCalledTimes(1);
   });
 
   it("surfaces Jupiter's response.error verbatim instead of the generic mapped message (A-13)", async () => {
@@ -876,7 +883,10 @@ describe("SwapCard — Story 3-2 execute flow (AC-3-2-1, 3-2-2, 3-2-3, 3-2-4)", 
     expect(errorAlert).toBeDefined();
   });
 
-  it("network throw: passes thrown SwapError(NetworkError) through to EXECUTE_ERROR (AC-3-2-1)", async () => {
+  it("network throw retryable=true first attempt → EXECUTE_RETRY, no error visible (3-3)", async () => {
+    // 3-3: retryable thrown errors (NetworkError) follow the same budget gate
+    // as response.code retryable failures. The error UI stays hidden until
+    // the budget exhausts. Pre-3-3 this test asserted error visible.
     vi.mocked(executeOrder).mockRejectedValueOnce(
       new SwapError(
         ErrorType.NetworkError,
@@ -893,7 +903,7 @@ describe("SwapCard — Story 3-2 execute flow (AC-3-2-1, 3-2-2, 3-2-3, 3-2-4)", 
     const errorAlert = alerts.find((el) =>
       el.textContent?.includes("Network error"),
     );
-    expect(errorAlert).toBeDefined();
+    expect(errorAlert).toBeUndefined();
   });
 
   it("renders SwapInFlightPanel ('Confirming on Solana…') during Executing and unmounts on Success (A-12)", async () => {
@@ -983,5 +993,271 @@ describe("SwapCard — Story 3-2 execute flow (AC-3-2-1, 3-2-2, 3-2-3, 3-2-4)", 
       el.textContent?.includes("Swap successful"),
     );
     expect(successAlert).toBeUndefined();
+  });
+});
+
+// ─── Story 3-3: retry logic + error recovery ─────────────────────────────────
+
+const FAILED_RETRYABLE_RESPONSE = {
+  status: "Failed" as const,
+  signature: "",
+  code: -1000,
+  inputAmountResult: "0",
+  outputAmountResult: "0",
+};
+
+describe("SwapCard — Story 3-3 retry logic (AC-3-3-1, 3-3-2, 3-3-3, 3-3-4, 3-3-6)", () => {
+  beforeEach(() => {
+    vi.mocked(preflightChecks.run).mockClear().mockResolvedValue(undefined);
+    vi.mocked(transactionSigner.sign)
+      .mockClear()
+      .mockResolvedValue("signed-base64");
+    vi.mocked(executeOrder).mockReset();
+  });
+
+  it("retryable -1000 then SUCCESS: succeeds on attempt 2 with retry_scheduled log (AC-3-3-1)", async () => {
+    const logSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+
+    vi.mocked(executeOrder)
+      .mockResolvedValueOnce(FAILED_RETRYABLE_RESPONSE)
+      .mockResolvedValueOnce(SUCCESSFUL_EXECUTE_RESPONSE);
+
+    const container = await setupConnectedWithQuote();
+    // Attempt 1 → fails -1000 → EXECUTE_RETRY → fetchQuote refetches
+    await clickSwapAndDrain(container);
+
+    // Drain the auto-fetched fresh quote so state lands at QuoteReady
+    await act(async () => {
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+
+    // Confirm no error visible after attempt 1 (retry suppressed it)
+    let alerts = screen.queryAllByRole("alert");
+    let errAlertAfter1 = alerts.find((el) =>
+      el.textContent?.includes("Transaction didn't land"),
+    );
+    expect(errAlertAfter1).toBeUndefined();
+
+    // Attempt 2 → succeeds
+    await clickSwapAndDrain(container);
+
+    expect(vi.mocked(executeOrder)).toHaveBeenCalledTimes(2);
+
+    alerts = screen.queryAllByRole("alert");
+    const successAlert = alerts.find((el) =>
+      el.textContent?.includes("Swap successful"),
+    );
+    expect(successAlert).toBeDefined();
+
+    // retry_scheduled log fired. `attempt` in the log = which 1-indexed
+    // attempt just failed (retryCount + 1 pre-dispatch). After the first
+    // failure that's attempt:1.
+    const logCalls = logSpy.mock.calls.map((args) => String(args[0] ?? ""));
+    const retrySchedLog = logCalls.find((s) =>
+      s.includes('"retry_scheduled"'),
+    );
+    expect(retrySchedLog).toBeDefined();
+    expect(retrySchedLog).toContain('"attempt":1');
+    expect(retrySchedLog).toContain('"code":-1000');
+
+    logSpy.mockRestore();
+  });
+
+  it("3 consecutive retryable failures → EXECUTE_ERROR with retriesAttempted=2 + retry_exhausted log (AC-3-3-3)", async () => {
+    const logSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+
+    vi.mocked(executeOrder)
+      .mockResolvedValueOnce(FAILED_RETRYABLE_RESPONSE)
+      .mockResolvedValueOnce(FAILED_RETRYABLE_RESPONSE)
+      .mockResolvedValueOnce(FAILED_RETRYABLE_RESPONSE);
+
+    const container = await setupConnectedWithQuote();
+
+    // Attempt 1 → EXECUTE_RETRY → refetch
+    await clickSwapAndDrain(container);
+    await act(async () => {
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+
+    // Attempt 2 → EXECUTE_RETRY → refetch
+    await clickSwapAndDrain(container);
+    await act(async () => {
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+
+    // Attempt 3 → final, EXECUTE_ERROR
+    await clickSwapAndDrain(container);
+
+    expect(vi.mocked(executeOrder)).toHaveBeenCalledTimes(3);
+
+    // Error visible after attempt 3
+    const alerts = screen.queryAllByRole("alert");
+    const errorAlert = alerts.find((el) =>
+      el.textContent?.includes("Transaction didn't land"),
+    );
+    expect(errorAlert).toBeDefined();
+
+    // Logs: 2× retry_scheduled, 1× retry_exhausted with totalAttempts:3
+    const logCalls = logSpy.mock.calls.map((args) => String(args[0] ?? ""));
+    const retryScheds = logCalls.filter((s) =>
+      s.includes('"retry_scheduled"'),
+    );
+    expect(retryScheds.length).toBe(2);
+    const exhaustedLog = logCalls.find((s) =>
+      s.includes('"retry_exhausted"'),
+    );
+    expect(exhaustedLog).toBeDefined();
+    expect(exhaustedLog).toContain('"totalAttempts":3');
+
+    logSpy.mockRestore();
+  });
+
+  it("non-retryable code -2 → EXECUTE_ERROR immediately + non_retryable_error log, NO retry (AC-3-3-4)", async () => {
+    const logSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+
+    vi.mocked(executeOrder).mockResolvedValueOnce({
+      status: "Failed",
+      signature: "",
+      code: -2,
+      inputAmountResult: "0",
+      outputAmountResult: "0",
+    });
+
+    const container = await setupConnectedWithQuote();
+    await clickSwapAndDrain(container);
+
+    // Error visible after the single attempt
+    const alerts = screen.queryAllByRole("alert");
+    const errorAlert = alerts.find((el) =>
+      el.textContent?.includes("Transaction error"),
+    );
+    expect(errorAlert).toBeDefined();
+
+    // Logs assert presence of non_retryable_error and ABSENCE of retry_scheduled
+    const logCalls = logSpy.mock.calls.map((args) => String(args[0] ?? ""));
+    const retryLog = logCalls.find((s) => s.includes('"retry_scheduled"'));
+    expect(retryLog).toBeUndefined();
+    const nonRetryLog = logCalls.find((s) =>
+      s.includes('"non_retryable_error"'),
+    );
+    expect(nonRetryLog).toBeDefined();
+
+    expect(vi.mocked(executeOrder)).toHaveBeenCalledTimes(1);
+
+    logSpy.mockRestore();
+  });
+
+  it("renders 'Retrying… attempt 2 of 3' during the in-between LoadingQuote phase (AC-3-3-2)", async () => {
+    let resolveQuote: () => void = () => {};
+
+    vi.mocked(executeOrder).mockResolvedValueOnce(FAILED_RETRYABLE_RESPONSE);
+
+    const container = await setupConnectedWithQuote();
+
+    // Replace fetch with a deferred mock so the retry's /order request hangs.
+    // The setup quote already resolved; the next fetch is the retry-triggered one.
+    globalThis.fetch = vi.fn().mockImplementation(
+      () =>
+        new Promise<{
+          ok: true;
+          json: () => Promise<typeof validQuoteResponse>;
+        }>((res) => {
+          resolveQuote = () =>
+            res({ ok: true, json: async () => validQuoteResponse });
+        }),
+    ) as unknown as typeof fetch;
+
+    await clickSwapAndDrain(container);
+
+    // After clickSwapAndDrain, executeOrder failed -1000 → EXECUTE_RETRY → fetchQuote
+    // is in flight (deferred). State is LoadingQuote, retryCount=1 → retry copy renders.
+    await act(async () => {
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+    });
+
+    const retryStatus = screen.queryAllByRole("status").find((el) =>
+      el.textContent?.includes("Retrying"),
+    );
+    expect(retryStatus).toBeDefined();
+    expect(retryStatus?.textContent).toContain("attempt 2 of 3");
+
+    // Resolve the deferred quote so the test cleans up properly
+    await act(async () => {
+      resolveQuote();
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+    });
+
+    // Retry copy unmounts once state lands on QuoteReady
+    const retryStatusAfter = screen.queryAllByRole("status").find((el) =>
+      el.textContent?.includes("Retrying"),
+    );
+    expect(retryStatusAfter).toBeUndefined();
+  });
+
+  it("3 consecutive thrown SwapError(NetworkError, retryable=true) → exhaust budget via catch branch (M-1 parity)", async () => {
+    // Code review M-1: the catch branch must mirror the response branch's
+    // budget-exhaustion behavior. Three consecutive thrown retryable errors
+    // should fire 2× retry_scheduled + 1× retry_exhausted (totalAttempts:3),
+    // then dispatch EXECUTE_ERROR with the user-facing message visible.
+    // Without the M-1 fix, the catch branch would drop retriesAttempted
+    // from error.details (only the response branch attached it).
+    const logSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+
+    const networkError = () =>
+      new SwapError(
+        ErrorType.NetworkError,
+        "Network error. Check your connection.",
+        undefined,
+        true,
+      );
+
+    vi.mocked(executeOrder)
+      .mockRejectedValueOnce(networkError())
+      .mockRejectedValueOnce(networkError())
+      .mockRejectedValueOnce(networkError());
+
+    const container = await setupConnectedWithQuote();
+
+    // Attempt 1 → catch → EXECUTE_RETRY → refetch
+    await clickSwapAndDrain(container);
+    await act(async () => {
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+
+    // Attempt 2 → catch → EXECUTE_RETRY → refetch
+    await clickSwapAndDrain(container);
+    await act(async () => {
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+
+    // Attempt 3 → catch → final EXECUTE_ERROR (budget exhausted)
+    await clickSwapAndDrain(container);
+
+    expect(vi.mocked(executeOrder)).toHaveBeenCalledTimes(3);
+
+    // Error visible after attempt 3 — NetworkError message surfaces verbatim
+    const alerts = screen.queryAllByRole("alert");
+    const errorAlert = alerts.find((el) =>
+      el.textContent?.includes("Network error"),
+    );
+    expect(errorAlert).toBeDefined();
+
+    // Log assertions: the catch branch fires the same observability events
+    // as the response branch (2× retry_scheduled, 1× retry_exhausted).
+    const logCalls = logSpy.mock.calls.map((args) => String(args[0] ?? ""));
+    const retryScheds = logCalls.filter((s) =>
+      s.includes('"retry_scheduled"'),
+    );
+    expect(retryScheds.length).toBe(2);
+    const exhaustedLog = logCalls.find((s) =>
+      s.includes('"retry_exhausted"'),
+    );
+    expect(exhaustedLog).toBeDefined();
+    expect(exhaustedLog).toContain('"totalAttempts":3');
+    // The catch-branch retry_exhausted log carries errorType (not code)
+    // since thrown SwapError doesn't always have a numeric code.
+    expect(exhaustedLog).toContain('"errorType":"NetworkError"');
+
+    logSpy.mockRestore();
   });
 });
