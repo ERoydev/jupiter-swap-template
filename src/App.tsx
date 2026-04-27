@@ -10,6 +10,7 @@ import {
     useWalletModal,
 } from "@solana/wallet-adapter-react-ui";
 import { PhantomWalletAdapter } from "@solana/wallet-adapter-wallets";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WalletButton } from "./ui/WalletButton";
 import { QuoteDisplay } from "./ui/QuoteDisplay";
@@ -21,8 +22,11 @@ import { TokenSelectorModal } from "./ui/TokenSelector";
 import { useSwapState } from "./state/useSwapState";
 import { getOrder } from "./services/jupiterService";
 import { preflightChecks } from "./handlers/preflightChecks";
-import { transactionSigner } from "./handlers/transactionSigner";
 import { prefetchBlueChipTokens } from "./hooks/useTokenSearch";
+import { useSwapExecution } from "./hooks/useSwapExecution";
+import { ErrorDisplay } from "./ui/ErrorDisplay";
+import { SuccessDisplay } from "./ui/SuccessDisplay";
+import { SwapInFlightPanel } from "./ui/SwapInFlightPanel";
 import { SwapState } from "./state/swapState";
 import { ErrorType, SwapError } from "./types/errors";
 import { SOLANA_RPC_URL } from "./config/env";
@@ -30,29 +34,18 @@ import {
     DEFAULT_INPUT_TOKEN,
     DEFAULT_OUTPUT_TOKEN,
     DEFAULT_SLIPPAGE_BPS,
+    MAX_RETRIES,
     QUOTE_REFRESH_INTERVAL_MS,
-    STALE_THRESHOLD_MS,
 } from "./config/constants";
+import { parsePositiveAmount } from "./utils/parseAmount";
 import type { TokenInfo } from "./types/tokens";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
 
 const DEBOUNCE_MS = 300;
 
-// Strict decimal matcher for the user-typed amount. Accepts `1`, `1.5`, `.5`;
-// rejects `1.5abc` (which parseFloat silently truncates to 1.5). Used at every
-// boundary where we convert the raw input string to lamports.
-const POSITIVE_DECIMAL_RE = /^(?:\d+(?:\.\d+)?|\.\d+)$/;
-
-function parsePositiveAmount(raw: string): number | null {
-    const trimmed = raw.trim();
-    if (!POSITIVE_DECIMAL_RE.test(trimmed)) return null;
-    const n = parseFloat(trimmed);
-    return Number.isFinite(n) && n > 0 ? n : null;
-}
-
 export function SwapCard() {
-    const { publicKey, connected, signTransaction } = useWallet();
+    const { publicKey, connected } = useWallet();
     const { setVisible: setWalletModalVisible } = useWalletModal();
     const { context, dispatch } = useSwapState();
     const [inputAmount, setInputAmount] = useState("");
@@ -61,6 +54,12 @@ export function SwapCard() {
     const abortControllerRef = useRef<AbortController | null>(null);
     const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const preflightDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Monotonic id for stale-preflight detection. preflightChecks.run is async
+    // and unabortable, so a slow earlier invocation can resolve AFTER a faster
+    // later one and clobber preflightError. Each scheduled run captures its
+    // own id and checks it matches the latest before writing to state.
+    // Mirrors the abortControllerRef identity check used by fetchQuote.
+    const preflightInvocationRef = useRef(0);
 
     const [inputToken, setInputToken] = useState<TokenInfo>(DEFAULT_INPUT_TOKEN);
     const [outputToken, setOutputToken] = useState<TokenInfo>(DEFAULT_OUTPUT_TOKEN);
@@ -218,6 +217,7 @@ export function SwapCard() {
             const amountLamports = Math.floor(
                 parsedAmount * 10 ** inputToken.decimals,
             ).toString();
+            const myInvocation = ++preflightInvocationRef.current;
             preflightChecks
                 .run(
                     {
@@ -229,8 +229,12 @@ export function SwapCard() {
                     },
                     { connected, publicKey },
                 )
-                .then(() => setPreflightError(null))
+                .then(() => {
+                    if (myInvocation !== preflightInvocationRef.current) return;
+                    setPreflightError(null);
+                })
                 .catch((err: unknown) => {
+                    if (myInvocation !== preflightInvocationRef.current) return;
                     const swapErr =
                         err instanceof SwapError
                             ? err
@@ -259,6 +263,33 @@ export function SwapCard() {
         (context.state === SwapState.QuoteReady ||
             context.state === SwapState.LoadingQuote);
     const hasError = context.state === SwapState.Error;
+    // True between sign-click and success/error — the user-visible "something
+    // is happening" window. Drives both the SwapInFlightPanel mount and the
+    // dimming of the input/output/slippage blocks (A-12).
+    const inFlight =
+        context.state === SwapState.Signing ||
+        context.state === SwapState.Executing;
+    const inFlightDim = inFlight ? "opacity-60 pointer-events-none" : "";
+
+    // Brief green-border flash on the output panel when a swap succeeds (A-12
+    // polish). Toggled on the Executing → Success transition and cleared after
+    // ~600ms so the styling falls back to the standard border. Wrapped in
+    // `motion-safe:` via the className below so reduced-motion users get the
+    // static success border without the transition.
+    const [flashSuccess, setFlashSuccess] = useState(false);
+    const prevStateRef = useRef(context.state);
+    useEffect(() => {
+        const wasInFlight =
+            prevStateRef.current === SwapState.Executing ||
+            prevStateRef.current === SwapState.Signing;
+        prevStateRef.current = context.state;
+        if (wasInFlight && context.state === SwapState.Success) {
+            setFlashSuccess(true);
+            const id = setTimeout(() => setFlashSuccess(false), 600);
+            return () => clearTimeout(id);
+        }
+        return undefined;
+    }, [context.state]);
 
     // Auto-refresh quote every QUOTE_REFRESH_INTERVAL_MS while QuoteReady + tab visible.
     // Pauses while hidden to avoid burning RPC; immediately refetches on tab refocus.
@@ -303,97 +334,14 @@ export function SwapCard() {
         fetchQuote,
     ]);
 
-    const handleSwap = useCallback(async () => {
-        // 1. Stale-quote gate (>30s since fetch) — refresh and bail out early.
-        //    Intentionally short-circuits before step 2: the debounced preflight
-        //    effect will re-run against the fresh quote once it lands, so the
-        //    next user click is gated on a preflight result that reflects
-        //    current-balance + current-quote. This is why step 2 only executes
-        //    on the fresh-quote branch.
-        if (
-            context.quoteFetchedAt !== null &&
-            Date.now() - context.quoteFetchedAt > STALE_THRESHOLD_MS
-        ) {
-            dispatch({ type: "FETCH_QUOTE" });
-            const staleParsed = parsePositiveAmount(inputAmount);
-            if (staleParsed !== null) {
-                const lamports = Math.floor(
-                    staleParsed * 10 ** inputToken.decimals,
-                ).toString();
-                void fetchQuote(lamports);
-            }
-            return;
-        }
-
-        if (!publicKey || !context.quote || !context.quote.transaction) return;
-
-        // 2. Authoritative fresh preflight at click time.
-        const parsedAmount = parsePositiveAmount(inputAmount) ?? 0;
-        const amountLamports = Math.floor(
-            parsedAmount * 10 ** inputToken.decimals,
-        ).toString();
-        try {
-            await preflightChecks.run(
-                {
-                    inputMint: inputToken.id,
-                    outputMint: outputToken.id,
-                    amount: amountLamports,
-                    inputDecimals: inputToken.decimals,
-                    inputSymbol: inputToken.symbol,
-                },
-                { connected, publicKey },
-            );
-        } catch (err: unknown) {
-            const swapErr =
-                err instanceof SwapError
-                    ? err
-                    : new SwapError(ErrorType.UnknownError, "Preflight failed");
-            dispatch({ type: "PREFLIGHT_FAILED", error: swapErr });
-            return;
-        }
-
-        // 3. Sign.
-        dispatch({ type: "START_SIGNING" });
-        try {
-            await transactionSigner.sign(context.quote.transaction, {
-                signTransaction,
-            });
-        } catch (err: unknown) {
-            const swapErr =
-                err instanceof SwapError
-                    ? err
-                    : new SwapError(
-                          ErrorType.WalletRejected,
-                          "Signature request failed",
-                      );
-            dispatch({ type: "SIGNING_ERROR", error: swapErr });
-            return;
-        }
-
-        // 4. TODO(3-2): call jupiterService.executeOrder with the signed tx.
-        // For now dispatch a placeholder so the UI returns to a recoverable Error
-        // state instead of stalling in Signing. Story 3-2 removes this placeholder.
-        dispatch({
-            type: "SIGNING_ERROR",
-            error: new SwapError(
-                ErrorType.UnknownError,
-                "Execute flow not yet implemented (story 3-2)",
-            ),
-        });
-    }, [
-        context.quoteFetchedAt,
-        context.quote,
-        inputAmount,
-        inputToken.id,
-        inputToken.decimals,
-        inputToken.symbol,
-        outputToken.id,
-        publicKey,
-        connected,
-        signTransaction,
+    const { handleSwap, lastSwapResult } = useSwapExecution({
+        context,
         dispatch,
+        inputToken,
+        outputToken,
+        inputAmount,
         fetchQuote,
-    ]);
+    });
 
     return (
         <div className="w-full max-w-[420px] rounded-lg border border-border bg-card p-4 space-y-4">
@@ -418,7 +366,10 @@ export function SwapCard() {
             </div>
 
             {/* Input amount */}
-            <div className="border border-border rounded-lg p-3">
+            <div
+                className={`border border-border rounded-lg p-3 ${inFlightDim}`}
+                inert={inFlight || undefined}
+            >
                 <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">
                         You pay
@@ -427,7 +378,7 @@ export function SwapCard() {
                         variant="outline"
                         aria-label="Select input token"
                         onClick={() => setSelectorSide("input")}
-                        className="text-sm font-medium h-auto py-1 px-2"
+                        className="text-sm font-medium min-h-11 px-3"
                     >
                         From: {inputToken.symbol}
                     </Button>
@@ -438,13 +389,18 @@ export function SwapCard() {
                     value={inputAmount}
                     onChange={(e) => handleAmountChange(e.target.value)}
                     placeholder="0.00"
-                    className="w-full bg-transparent text-xl font-medium text-foreground outline-none placeholder:text-muted-foreground mt-1"
+                    className="w-full bg-transparent text-xl font-medium text-foreground outline-none placeholder:text-muted-foreground mt-1 min-h-11 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     aria-label={`Amount of ${inputToken.symbol} to swap`}
                 />
             </div>
 
-            {/* Output display */}
-            <div className="border border-border rounded-lg p-3">
+            {/* Output display — gains a brief motion-safe green-border flash on
+                Executing → Success (A-12). Reduced-motion users still see the
+                static success border, just without the colour transition. */}
+            <div
+                className={`border rounded-lg p-3 motion-safe:transition-colors motion-safe:duration-500 ${inFlightDim} ${flashSuccess ? "border-emerald-500" : "border-border"}`}
+                inert={inFlight || undefined}
+            >
                 <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">
                         You receive
@@ -453,12 +409,12 @@ export function SwapCard() {
                         variant="outline"
                         aria-label="Select output token"
                         onClick={() => setSelectorSide("output")}
-                        className="text-sm font-medium h-auto py-1 px-2"
+                        className="text-sm font-medium min-h-11 px-3"
                     >
                         To: {outputToken.symbol}
                     </Button>
                 </div>
-                <div className="text-xl font-medium text-muted-foreground mt-1">
+                <div className="text-xl font-medium text-muted-foreground mt-1 min-h-11 flex items-center">
                     {hasQuote && context.quote
                         ? (
                               Number(context.quote.outAmount) /
@@ -473,7 +429,10 @@ export function SwapCard() {
 
             {/* Slippage tolerance (A-7). Layout-agnostic component — move/restyle
                 this wrapper freely without touching SlippageSelector internals. */}
-            <div className="border-t border-border pt-3 space-y-2">
+            <div
+                className={`border-t border-border pt-3 space-y-2 ${inFlightDim}`}
+                inert={inFlight || undefined}
+            >
                 <span className="text-xs text-muted-foreground">
                     Slippage tolerance
                 </span>
@@ -486,59 +445,96 @@ export function SwapCard() {
             {/* SOL balance fetch-failure warning (AC-5) */}
             <SolBalanceWarning />
 
-            {/* First-load skeleton only — hidden during refresh (A-6). */}
-            {isLoading && context.quote === null && (
+            {/* First-load skeleton only — hidden during refresh (A-6) and
+                during retry (3-3, where the retry-progress block below replaces it). */}
+            {isLoading &&
+                context.quote === null &&
+                context.retryCount === 0 && (
+                    <div
+                        className="space-y-2"
+                        role="status"
+                        aria-label="Loading quote"
+                    >
+                        <div className="h-4 w-3/4 rounded bg-muted animate-pulse" />
+                        <div className="h-4 w-1/2 rounded bg-muted animate-pulse" />
+                    </div>
+                )}
+
+            {/* Retry-progress copy (3-3): replaces the first-load skeleton when
+                EXECUTE_RETRY has cleared the quote and bumped retryCount. */}
+            {isLoading && context.retryCount > 0 && (
                 <div
-                    className="space-y-2"
+                    className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2"
                     role="status"
-                    aria-label="Loading quote"
+                    aria-live="polite"
                 >
-                    <div className="h-4 w-3/4 rounded bg-muted animate-pulse" />
-                    <div className="h-4 w-1/2 rounded bg-muted animate-pulse" />
+                    <Loader2
+                        className="h-4 w-4 animate-spin text-muted-foreground"
+                        aria-hidden="true"
+                    />
+                    <span className="text-sm text-muted-foreground">
+                        Retrying… attempt {context.retryCount + 1} of{" "}
+                        {MAX_RETRIES}
+                    </span>
                 </div>
             )}
 
-            {/* Quote details */}
-            {hasQuote && context.quote && (
-                <QuoteDisplay
-                    quote={context.quote}
-                    inputSymbol={inputToken.symbol}
-                    outputSymbol={outputToken.symbol}
-                    inputAmount={Math.floor(
-                        (parsePositiveAmount(inputAmount) ?? 0) *
-                            10 ** inputToken.decimals,
-                    ).toString()}
-                    inputDecimals={inputToken.decimals}
-                    outputDecimals={outputToken.decimals}
-                    quoteFetchedAt={context.quoteFetchedAt}
-                    fallbackSlippageBps={slippageBps}
+            {/* Quote details — replaced by the in-flight panel during sign/execute (A-12). */}
+            {inFlight ? (
+                <SwapInFlightPanel
+                    mode={
+                        context.state === SwapState.Signing
+                            ? "signing"
+                            : "executing"
+                    }
                 />
+            ) : (
+                hasQuote &&
+                context.quote && (
+                    <QuoteDisplay
+                        quote={context.quote}
+                        inputSymbol={inputToken.symbol}
+                        outputSymbol={outputToken.symbol}
+                        inputAmount={Math.floor(
+                            (parsePositiveAmount(inputAmount) ?? 0) *
+                                10 ** inputToken.decimals,
+                        ).toString()}
+                        inputDecimals={inputToken.decimals}
+                        outputDecimals={outputToken.decimals}
+                        quoteFetchedAt={context.quoteFetchedAt}
+                        fallbackSlippageBps={slippageBps}
+                    />
+                )
             )}
 
             {/* Error state */}
             {hasError && context.error && (
-                <div
-                    className="rounded-lg border border-destructive bg-destructive/10 p-3"
-                    role="alert"
-                >
-                    <p className="text-sm text-destructive font-medium">
-                        {context.error.message}
-                    </p>
-                    <button
-                        onClick={() => dispatch({ type: "DISMISS" })}
-                        className="text-xs text-muted-foreground underline mt-1"
-                    >
-                        Dismiss
-                    </button>
-                </div>
+                <ErrorDisplay
+                    error={context.error}
+                    onDismiss={() => dispatch({ type: "DISMISS" })}
+                />
             )}
+
+            {/* Success state — mounted between Error and the Swap/Connect CTA. */}
+            {context.state === SwapState.Success &&
+                context.txSignature !== null &&
+                lastSwapResult !== null && (
+                    <SuccessDisplay
+                        result={lastSwapResult}
+                        inputSymbol={inputToken.symbol}
+                        inputDecimals={inputToken.decimals}
+                        outputSymbol={outputToken.symbol}
+                        outputDecimals={outputToken.decimals}
+                        onNewSwap={() => dispatch({ type: "NEW_SWAP" })}
+                    />
+                )}
 
             {/* Swap / Connect button */}
             {!connected ? (
                 <Button
                     type="button"
                     size="lg"
-                    className="w-full py-3 text-sm font-medium"
+                    className="w-full min-h-11 py-3 text-sm font-medium"
                     onClick={() => setWalletModalVisible(true)}
                     aria-label="Connect Wallet"
                 >

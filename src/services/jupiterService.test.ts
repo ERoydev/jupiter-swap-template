@@ -16,6 +16,11 @@ async function loadGetOrder() {
   return mod.getOrder;
 }
 
+async function loadExecuteOrder() {
+  const mod = await import("./jupiterService");
+  return mod.executeOrder;
+}
+
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.resetModules();
@@ -188,5 +193,73 @@ describe("jupiterService.getOrder", () => {
       expect(err).toBe(abortError);
       expect((err as DOMException).name).toBe("AbortError");
     }
+  });
+});
+
+describe("jupiterService.executeOrder", () => {
+  const mockExecuteResponse = {
+    status: "Success" as const,
+    signature:
+      "5VfYSFjV9bbmU3pH8sFv2J5sYNxYi3DGhVSdH5LpHF6m4q1xTk8wZqLzQyJtR7nWcK3vBpA9eXfHsGdNuMrTbY1z",
+    code: 0,
+    inputAmountResult: "1000000000",
+    outputAmountResult: "17057460",
+  };
+
+  it("sends POST to /swap/v2/execute with signedTransaction + requestId body, x-api-key header, Content-Type application/json", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockExecuteResponse),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const executeOrder = await loadExecuteOrder();
+    await executeOrder("base64SignedTx==", "req-123");
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, opts] = fetchMock.mock.calls[0]!;
+    expect(url).toContain("/swap/v2/execute");
+    expect(opts.method).toBe("POST");
+    expect(opts.headers["x-api-key"]).toBe("test-key");
+    expect(opts.headers["Content-Type"]).toBe("application/json");
+    const body = JSON.parse(opts.body);
+    expect(body).toEqual({ signedTransaction: "base64SignedTx==", requestId: "req-123" });
+  });
+
+  it("returns parsed ExecuteResponse on code:0 success", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(mockExecuteResponse),
+      }),
+    );
+
+    const executeOrder = await loadExecuteOrder();
+    const result = await executeOrder("signedTx", "req-123");
+
+    expect(result.status).toBe("Success");
+    expect(result.code).toBe(0);
+    expect(result.signature).toBe(mockExecuteResponse.signature);
+    expect(result.inputAmountResult).toBe("1000000000");
+    expect(result.outputAmountResult).toBe("17057460");
+  });
+
+  it("throws SwapError(ConfigError) synchronously when VITE_JUPITER_API_KEY is empty (A-5)", async () => {
+    vi.stubEnv("VITE_JUPITER_API_KEY", "");
+    vi.resetModules();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const executeOrder = await loadExecuteOrder();
+    try {
+      await executeOrder("signedTx", "req-123");
+      expect.fail("Should have thrown ConfigError");
+    } catch (err: unknown) {
+      const swapErr = err as { type: string; retryable: boolean };
+      expect(swapErr.type).toBe(ErrorType.ConfigError);
+      expect(swapErr.retryable).toBe(false);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

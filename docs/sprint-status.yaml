@@ -56,14 +56,14 @@ epics:
         slug: execute-flow-success-display
         title: "Execute Flow + Success Display"
         size: M
-        status: backlog
+        status: done
         wave: 3
         dependencies: ["3-1"]
       - id: "3-3"
         slug: retry-logic-error-recovery
         title: "Retry Logic + Error Recovery"
-        size: M
-        status: backlog
+        size: S
+        status: done
         wave: 3
         dependencies: ["3-2"]
   - id: 4
@@ -73,7 +73,7 @@ epics:
         slug: preflight-ux-responsive-layout
         title: "Pre-flight UX + Responsive Layout"
         size: M
-        status: backlog
+        status: done
         wave: 4
         dependencies: ["3-1"]
       - id: "4-2"

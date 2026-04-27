@@ -1,0 +1,370 @@
+import { useCallback, useEffect, useState } from "react";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { executeOrder } from "../services/jupiterService";
+import { preflightChecks } from "../handlers/preflightChecks";
+import { transactionSigner } from "../handlers/transactionSigner";
+import { mapErrorCode } from "../utils/jupiterErrorMapper";
+import { parsePositiveAmount } from "../utils/parseAmount";
+import { SwapState } from "../state/swapState";
+import type { SwapAction, SwapStateContext } from "../state/swapReducer";
+import { ErrorType, SwapError } from "../types/errors";
+import type { SwapResult } from "../types/swap";
+import type { TokenInfo } from "../types/tokens";
+import { MAX_RETRIES, STALE_THRESHOLD_MS } from "../config/constants";
+
+interface UseSwapExecutionParams {
+  context: SwapStateContext;
+  dispatch: (action: SwapAction) => void;
+  inputToken: TokenInfo;
+  outputToken: TokenInfo;
+  inputAmount: string;
+  fetchQuote: (amount: string) => Promise<void>;
+}
+
+interface UseSwapExecutionReturn {
+  handleSwap: () => Promise<void>;
+  lastSwapResult: SwapResult | null;
+}
+
+/**
+ * Owns the click-time swap orchestration: stale-quote gate → click-time
+ * preflight → sign → post-sign stale recheck → /execute → success/error
+ * dispatches. Generates a per-attempt swapCorrelationId at the top and
+ * threads it through every structured log line so an investigator can
+ * reconstruct one swap attempt from interleaved console output.
+ *
+ * Lives in a hook (not a handler module) because the orchestration reaches
+ * into the reducer dispatch + component-local lastSwapResult state. A-11
+ * defers the standalone `swapHandler` module to Story 3-3, when the retry
+ * loop forces a clear "what does the handler return" contract.
+ */
+export function useSwapExecution({
+  context,
+  dispatch,
+  inputToken,
+  outputToken,
+  inputAmount,
+  fetchQuote,
+}: UseSwapExecutionParams): UseSwapExecutionReturn {
+  const { publicKey, connected, signTransaction } = useWallet();
+
+  // Display-only result captured during the success branch. Lives outside the
+  // reducer because it carries inputAmountResult / outputAmountResult —
+  // render-only fields the closed reducer contract (Story 1-2) does not track.
+  // Cleared whenever state leaves Success.
+  const [lastSwapResult, setLastSwapResult] = useState<SwapResult | null>(null);
+
+  useEffect(() => {
+    if (context.state !== SwapState.Success) {
+      setLastSwapResult(null);
+    }
+  }, [context.state]);
+
+  const handleSwap = useCallback(async () => {
+    const swapCorrelationId = crypto.randomUUID();
+    const logSwap = (event: string, payload: Record<string, unknown> = {}) => {
+      console.info(
+        JSON.stringify({
+          event,
+          swapCorrelationId,
+          ...payload,
+          timestamp: new Date().toISOString(),
+        }),
+      );
+    };
+
+    // 1. Stale-quote gate — refresh and bail if the quote is past threshold.
+    if (
+      context.quoteFetchedAt !== null &&
+      Date.now() - context.quoteFetchedAt > STALE_THRESHOLD_MS
+    ) {
+      logSwap("swap_aborted_stale_quote", {
+        quoteAgeMs: Date.now() - context.quoteFetchedAt,
+      });
+      dispatch({ type: "FETCH_QUOTE" });
+      const staleParsed = parsePositiveAmount(inputAmount);
+      if (staleParsed !== null) {
+        const lamports = Math.floor(
+          staleParsed * 10 ** inputToken.decimals,
+        ).toString();
+        void fetchQuote(lamports);
+      }
+      return;
+    }
+
+    if (!publicKey || !context.quote || !context.quote.transaction) {
+      // Code review #2 (Medium): every other path in this orchestration emits
+      // a structured log line; this invariant guard was the only silent exit.
+      // A user reporting "I clicked Swap and nothing happened" left no trace
+      // in the console. The dispatch flag stays no-op (the state is already
+      // inconsistent — surfacing a SwapError would imply a fixable failure)
+      // but the log gives an investigator a grep target.
+      logSwap("swap_aborted_invariant_violated", {
+        hasPublicKey: !!publicKey,
+        hasQuote: !!context.quote,
+        hasTransaction: !!context.quote?.transaction,
+      });
+      return;
+    }
+
+    logSwap("swap_started", {
+      inputMint: inputToken.id,
+      outputMint: outputToken.id,
+      requestId: context.quote.requestId,
+    });
+
+    // 2. Click-time preflight (authoritative; debounced result may be stale).
+    const parsedAmount = parsePositiveAmount(inputAmount) ?? 0;
+    const amountLamports = Math.floor(
+      parsedAmount * 10 ** inputToken.decimals,
+    ).toString();
+    try {
+      await preflightChecks.run(
+        {
+          inputMint: inputToken.id,
+          outputMint: outputToken.id,
+          amount: amountLamports,
+          inputDecimals: inputToken.decimals,
+          inputSymbol: inputToken.symbol,
+        },
+        { connected, publicKey },
+      );
+      logSwap("preflight_passed");
+    } catch (err: unknown) {
+      const swapErr =
+        err instanceof SwapError
+          ? err
+          : new SwapError(ErrorType.UnknownError, "Preflight failed");
+      logSwap("preflight_failed", {
+        errorType: swapErr.type,
+        message: swapErr.message,
+      });
+      dispatch({ type: "PREFLIGHT_FAILED", error: swapErr });
+      return;
+    }
+
+    // 3. Sign — capture the signed base64 tx for /execute.
+    logSwap("signing_started");
+    dispatch({ type: "START_SIGNING" });
+    let signedTx: string;
+    try {
+      signedTx = await transactionSigner.sign(context.quote.transaction, {
+        signTransaction,
+      });
+    } catch (err: unknown) {
+      const swapErr =
+        err instanceof SwapError
+          ? err
+          : new SwapError(
+              ErrorType.WalletRejected,
+              "Signature request failed",
+            );
+      logSwap("signing_failed", {
+        errorType: swapErr.type,
+        message: swapErr.message,
+      });
+      dispatch({ type: "SIGNING_ERROR", error: swapErr });
+      return;
+    }
+
+    // 3a. Post-signing stale recheck — signing may have taken longer than
+    // STALE_THRESHOLD_MS (slow wallet UX). Without this, slow-signers always
+    // burn a -1004 ("invalid block height") response on /execute.
+    if (
+      context.quoteFetchedAt !== null &&
+      Date.now() - context.quoteFetchedAt > STALE_THRESHOLD_MS
+    ) {
+      const staleErr = new SwapError(
+        ErrorType.TransactionExpired,
+        "Quote expired during signing — please try again",
+      );
+      logSwap("signing_failed", {
+        errorType: staleErr.type,
+        message: staleErr.message,
+        reason: "post_sign_stale_recheck",
+      });
+      dispatch({ type: "SIGNING_ERROR", error: staleErr });
+      return;
+    }
+
+    // 4. Execute via Jupiter.
+    logSwap("execute_started", { requestId: context.quote.requestId });
+    dispatch({ type: "TX_SIGNED" });
+
+    const requestId = context.quote.requestId;
+    try {
+      const response = await executeOrder(signedTx, requestId);
+      const isSuccess =
+        response.status === "Success" && response.code === 0;
+
+      if (isSuccess) {
+        const result: SwapResult = {
+          txId: response.signature,
+          status: "confirmed",
+          inputAmount: response.inputAmountResult,
+          outputAmount: response.outputAmountResult,
+          retriesAttempted: context.retryCount,
+          swapCorrelationId,
+        };
+        setLastSwapResult(result);
+        logSwap("execute_succeeded", {
+          signature: response.signature,
+          inputAmount: response.inputAmountResult,
+          outputAmount: response.outputAmountResult,
+        });
+        dispatch({
+          type: "EXECUTE_SUCCESS",
+          signature: response.signature,
+        });
+        return;
+      }
+
+      // 3-3: gate retryable failures on the budget BEFORE building EXECUTE_ERROR.
+      // Retry decision lives here (not in the Error UI) because the reducer
+      // does not allow EXECUTE_RETRY from the Error state and EXECUTE_ERROR
+      // resets retryCount to 0 — making the Error state amnesic.
+      // Off-by-one: `< MAX_RETRIES - 1` because EXECUTE_RETRY itself increments.
+      //
+      // A-13: prefer Jupiter's own `response.error` over generic mapping.message.
+      const mapping = mapErrorCode(response.code);
+      const canRetry =
+        mapping.retryable && context.retryCount < MAX_RETRIES - 1;
+
+      if (canRetry) {
+        logSwap("retry_scheduled", {
+          code: response.code,
+          attempt: context.retryCount + 1,
+          requestId,
+        });
+        dispatch({ type: "EXECUTE_RETRY" });
+        // Trigger a fresh /order so the user can re-attempt with a new quote.
+        // Mirrors the stale-quote gate at the top of handleSwap.
+        const retryParsed = parsePositiveAmount(inputAmount);
+        if (retryParsed !== null) {
+          const lamports = Math.floor(
+            retryParsed * 10 ** inputToken.decimals,
+          ).toString();
+          void fetchQuote(lamports);
+        }
+        return;
+      }
+
+      // Budget exhausted (retryable but limit hit) OR non-retryable.
+      const userMessage =
+        response.error && response.error.trim().length > 0
+          ? response.error.trim()
+          : mapping.message;
+      const swapErr = new SwapError(
+        mapping.type,
+        userMessage,
+        response.code,
+        mapping.retryable,
+        {
+          requestId,
+          httpStatus: 200,
+          responseBody: response,
+          ...(mapping.retryable
+            ? { retriesAttempted: context.retryCount }
+            : {}),
+        },
+      );
+
+      if (mapping.retryable) {
+        logSwap("retry_exhausted", {
+          totalAttempts: context.retryCount + 1,
+          code: response.code,
+        });
+      } else {
+        logSwap("non_retryable_error", {
+          code: response.code,
+          errorType: mapping.type,
+        });
+      }
+
+      dispatch({ type: "EXECUTE_ERROR", error: swapErr });
+    } catch (err: unknown) {
+      const swapErr =
+        err instanceof SwapError
+          ? err
+          : new SwapError(
+              ErrorType.UnknownError,
+              "Unexpected error executing swap",
+              undefined,
+              false,
+              { thrown: String(err) },
+            );
+
+      // Mirror the response-branch retry gate so thrown retryable errors
+      // (e.g. NetworkError) get the same budget treatment.
+      const canRetry =
+        swapErr.retryable && context.retryCount < MAX_RETRIES - 1;
+
+      if (canRetry) {
+        logSwap("retry_scheduled", {
+          errorType: swapErr.type,
+          attempt: context.retryCount + 1,
+          requestId,
+        });
+        dispatch({ type: "EXECUTE_RETRY" });
+        const retryParsed = parsePositiveAmount(inputAmount);
+        if (retryParsed !== null) {
+          const lamports = Math.floor(
+            retryParsed * 10 ** inputToken.decimals,
+          ).toString();
+          void fetchQuote(lamports);
+        }
+        return;
+      }
+
+      // Code review M-1: parity with the response branch — when a thrown
+      // retryable error exhausts the budget (e.g., 3 consecutive NetworkError
+      // throws on a flaky mainnet day), rebuild the SwapError so
+      // details.retriesAttempted is set. Without this, downstream consumers
+      // (4-1 ErrorDisplay refactor, log analysis) would see undefined for
+      // the catch-branch path while seeing 2 for the response-branch path.
+      const finalErr =
+        swapErr.retryable
+          ? new SwapError(
+              swapErr.type,
+              swapErr.message,
+              swapErr.code,
+              swapErr.retryable,
+              {
+                ...(swapErr.details ?? {}),
+                retriesAttempted: context.retryCount,
+              },
+            )
+          : swapErr;
+
+      if (swapErr.retryable) {
+        logSwap("retry_exhausted", {
+          totalAttempts: context.retryCount + 1,
+          errorType: swapErr.type,
+        });
+      } else {
+        logSwap("non_retryable_error", {
+          errorType: swapErr.type,
+          message: swapErr.message,
+        });
+      }
+
+      dispatch({ type: "EXECUTE_ERROR", error: finalErr });
+    }
+  }, [
+    context.quoteFetchedAt,
+    context.quote,
+    context.retryCount,
+    inputAmount,
+    inputToken.id,
+    inputToken.decimals,
+    inputToken.symbol,
+    outputToken.id,
+    publicKey,
+    connected,
+    signTransaction,
+    dispatch,
+    fetchQuote,
+  ]);
+
+  return { handleSwap, lastSwapResult };
+}

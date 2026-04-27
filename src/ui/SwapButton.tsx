@@ -1,3 +1,5 @@
+import { useId } from "react";
+import { Loader2 } from "lucide-react";
 import { Tooltip } from "@base-ui/react/tooltip";
 import { Button } from "@/components/ui/button";
 import { SwapState } from "../state/swapState";
@@ -99,16 +101,33 @@ export function SwapButton({
   onClick,
 }: SwapButtonProps) {
   const surface = deriveSurface(state, hasQuote, preflightError);
+  const inFlight = state === SwapState.Signing || state === SwapState.Executing;
+  // Stable id linking the disabled button to its tooltip popup so screen
+  // readers announce *why* the swap is blocked. The tooltip popup renders in
+  // a portal, so a plain DOM-relative description would be lost; an id-based
+  // aria-describedby survives the portal hop.
+  const tooltipId = useId();
+  const describedBy = surface.tooltip !== null ? tooltipId : undefined;
 
+  // Use aria-disabled (not the HTML disabled attribute) so the button stays
+  // focusable. A focusable disabled button lets keyboard + screen-reader users
+  // tab to it, which opens the base-ui Tooltip on focus, mounts the popup in
+  // the DOM, and lets aria-describedby actually resolve to the tooltip text.
+  // The HTML disabled attribute would skip the button in tab order entirely,
+  // breaking the announcement chain. Click activation is already guarded by
+  // the surface.disabled check below.
   const button = (
     <Button
-      className="w-full"
+      className="w-full min-h-11 aria-disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:pointer-events-auto"
       size="lg"
-      disabled={surface.disabled}
       aria-disabled={surface.disabled}
       aria-label="Swap tokens"
+      aria-describedby={describedBy}
       onClick={surface.disabled ? undefined : onClick}
     >
+      {inFlight && (
+        <Loader2 aria-hidden="true" className="mr-2 h-4 w-4 animate-spin" />
+      )}
       {surface.label}
     </Button>
   );
@@ -127,6 +146,8 @@ export function SwapButton({
         <Tooltip.Portal>
           <Tooltip.Positioner>
             <Tooltip.Popup
+              id={tooltipId}
+              role="tooltip"
               className="rounded bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md"
             >
               {surface.tooltip}

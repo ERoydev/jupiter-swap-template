@@ -3,7 +3,7 @@
   "flow": "greenfield",
   "version": "next-2.0",
   "created": "2026-04-14T06:44:29.255Z",
-  "lastUpdated": "2026-04-24T12:39:57Z",
+  "lastUpdated": "2026-04-27T13:58:00Z",
   "currentPhase": "implement",
   "currentStep": null,
   "currentCheckpoint": null,
@@ -36,7 +36,7 @@
       "wavesPlanned": 4
     }
   },
-  "storiesDone": 7,
+  "storiesDone": 10,
   "storiesTotal": 11,
   "changeStories": [],
   "tooling": {
@@ -50,15 +50,15 @@
     "security": null
   },
   "baselineTests": {
-    "total": 187,
-    "passing": 187,
+    "total": 296,
+    "passing": 296,
     "failing": 0,
-    "lastRefreshedAt": "2026-04-23T09:49:47Z",
-    "lastRefreshedAtStory": 5
+    "lastRefreshedAt": "2026-04-27T13:58:00Z",
+    "lastRefreshedAtStory": 10
   },
   "metrics": {
     "gates": {
-      "passes": 8,
+      "passes": 9,
       "fails": 0,
       "overrides": 0,
       "backNavigations": 0,
@@ -92,49 +92,49 @@
       }
     },
     "stories": {
-      "completed": 7,
+      "completed": 10,
       "skipped": 0,
       "changeStoriesCreated": 0,
-      "gate5Passes": 5,
+      "gate5Passes": 8,
       "gate5Fails": 0,
       "gate5Overrides": 0,
-      "avgTasksPerStory": 3.4,
+      "avgTasksPerStory": 3.2,
       "sizeDistribution": {
-        "S": 2,
-        "M": 6,
+        "S": 3,
+        "M": 8,
         "L": 0
       }
     },
     "tasks": {
-      "totalCompleted": 17,
-      "totalCompletedNoCommit": 0,
+      "totalCompleted": 25,
+      "totalCompletedNoCommit": 1,
       "totalSkipped": 0,
-      "totalRevisions": 9,
-      "totalVerificationCycles": 19,
-      "firstPassSuccess": 12,
-      "tddCount": 6,
-      "tddTotal": 17,
-      "avgVerificationCycles": 1.12
+      "totalRevisions": 13,
+      "totalVerificationCycles": 34,
+      "firstPassSuccess": 18,
+      "tddCount": 12,
+      "tddTotal": 26,
+      "avgVerificationCycles": 1.31
     },
     "codeReview": {
-      "reviewsRun": 5,
-      "totalFindings": 34,
+      "reviewsRun": 6,
+      "totalFindings": 39,
       "criticalFindings": 1,
       "highFindings": 3,
-      "mediumFindings": 9,
-      "lowFindings": 21,
-      "findingsDeferred": 11
+      "mediumFindings": 12,
+      "lowFindings": 23,
+      "findingsDeferred": 13
     },
     "quality": {
-      "interfaceAudits": 7,
+      "interfaceAudits": 10,
       "interfaceMismatches": 0,
-      "amendments": 6,
-      "concerns": 7,
+      "amendments": 11,
+      "concerns": 12,
       "concernsBySeverity": {
         "critical": 0,
         "high": 0,
         "medium": 1,
-        "low": 6
+        "low": 11
       }
     },
     "drift": {
@@ -158,7 +158,7 @@
       }
     },
     "execution": {
-      "totalSessions": 9,
+      "totalSessions": 11,
       "pauseResumeCount": 6,
       "agentTeamsUsed": false,
       "parallelWaves": 0,
@@ -190,11 +190,11 @@
       }
     },
     "git": {
-      "totalCommits": 17,
-      "totalFilesChanged": 40,
-      "totalInsertions": 2991,
-      "totalDeletions": 47,
-      "testsAdded": 100
+      "totalCommits": 23,
+      "totalFilesChanged": 72,
+      "totalInsertions": 4307,
+      "totalDeletions": 253,
+      "testsAdded": 117
     }
   },
   "waveStrategy": {
@@ -265,6 +265,32 @@
       "id": "58d71ad1-2864-4ae4-b849-41ac11987f4d",
       "transcript": "/Users/emilemilovroydev/.claude/projects/-Users-emilemilovroydev-Rust-projects-Solana-swap-integration-templates-jupiter-swap-template/58d71ad1-2864-4ae4-b849-41ac11987f4d.jsonl",
       "firstSeenAt": "2026-04-24T07:38:44.795Z"
+    },
+    {
+      "id": "b5f2e394-aa0e-4114-a540-0529fa5494f1",
+      "transcript": "/Users/emilemilovroydev/.claude/projects/-Users-emilemilovroydev-Rust-projects-Solana-swap-integration-templates-jupiter-swap-template/b5f2e394-aa0e-4114-a540-0529fa5494f1.jsonl",
+      "firstSeenAt": "2026-04-24T12:46:48.758Z"
+    },
+    {
+      "id": "3e4e280c-e03a-4c01-b8cf-1b7f35dab14e",
+      "transcript": "/Users/emilemilovroydev/.claude/projects/-Users-emilemilovroydev-Rust-projects-Solana-swap-integration-templates-jupiter-swap-template/3e4e280c-e03a-4c01-b8cf-1b7f35dab14e.jsonl",
+      "firstSeenAt": "2026-04-26T17:54:25.336Z"
+    },
+    {
+      "id": "849ebae1-c315-480a-b746-51d005133446",
+      "transcript": "/Users/emilemilovroydev/.claude/projects/-Users-emilemilovroydev-Rust-projects-Solana-swap-integration-templates-jupiter-swap-template/849ebae1-c315-480a-b746-51d005133446.jsonl",
+      "firstSeenAt": "2026-04-26T18:30:36.412Z"
     }
-  ]
+  ],
+  "compacted": {
+    "at": "2026-04-27T11:23:06.120Z",
+    "trigger": "unknown"
+  },
+  "recovery": {
+    "interrupted": true,
+    "interruptedAt": "2026-04-27T11:54:25.570Z",
+    "errorType": "unknown",
+    "errorMessage": "",
+    "uncommittedChanges": true
+  }
 }
