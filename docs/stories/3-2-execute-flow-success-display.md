@@ -330,7 +330,7 @@ Computed from source on disk at 2026-04-26. Implementer should re-check hashes b
   - Amendment: log a brief entry in `docs/amendments.md` covering the return-type tightening (`unknown → ExecuteResponse`). This is Rule 3 per code-standards (interface refinement).
   - Commit: `feat(services): tighten executeOrder return type to ExecuteResponse`
 
-- [ ] **Task 2: `SuccessDisplay` component + unit tests**
+- [x] **Task 2: `SuccessDisplay` component + unit tests**
   - Maps to: AC-3-2-2, AC-3-2-3.
   - Files to create:
     - `src/ui/SuccessDisplay.tsx` — props per Verified Interfaces. Uses shadcn `Alert` (check `src/components/ui/alert.tsx` for available variants — if `success`/`green` exists, use it; otherwise compose with explicit border-emerald classes via design tokens). Renders title, sent/received DetailRows (UI units), Solscan anchor, "New Swap" Button.
@@ -339,7 +339,7 @@ Computed from source on disk at 2026-04-26. Implementer should re-check hashes b
   - Patterns to follow: see `src/ui/SolBalanceWarning.tsx` for the Alert + Button composition; see `src/ui/QuoteDisplay.tsx` for `DetailList` / `DetailRow` usage and the `Number(rawString) / 10 ** decimals` formatting pattern.
   - Commit: `feat(ui): add SuccessDisplay alert with Solscan link + new-swap action`
 
-- [ ] **Task 3: SwapButton spinner addition**
+- [x] **Task 3: SwapButton spinner addition**
   - Maps to: AC-3-2-5 ("with Spinner").
   - Files to modify:
     - `src/ui/SwapButton.tsx` — import `Loader2` from `lucide-react`. In the rendered Button, prefix the label with `<Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />` when `surface.label === "Waiting for wallet…"` OR `surface.label === "Executing swap…"` (cleanest gate; equivalent to the state check).
@@ -347,7 +347,7 @@ Computed from source on disk at 2026-04-26. Implementer should re-check hashes b
   - TDD: extend tests first.
   - Commit: `feat(ui): add inline spinner to SwapButton during signing and executing`
 
-- [ ] **Task 4: `SwapCard.handleSwap` — wire executeOrder + EXECUTE_SUCCESS/ERROR + correlation ID + post-sign stale check**
+- [x] **Task 4: `SwapCard.handleSwap` — wire executeOrder + EXECUTE_SUCCESS/ERROR + correlation ID + post-sign stale check**
   - Maps to: AC-3-2-1 (orchestration), AC-3-2-2 (mounts SuccessDisplay), AC-3-2-3 (NEW_SWAP wiring), AC-3-2-4 (correlation ID + logs), AC-3-2-5 (Executing state visible — no code change needed beyond Task 3 since SwapButton already reads state).
   - Files to modify:
     - `src/App.tsx`:
