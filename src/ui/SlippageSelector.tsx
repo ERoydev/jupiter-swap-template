@@ -171,7 +171,7 @@ export function SlippageSelector({ value, onChange }: SlippageSelectorProps) {
                         aria-label={`${p.label} slippage tolerance`}
                         onClick={() => selectPreset(p.bps)}
                         className={
-                            "flex-1 rounded-md border px-2 py-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
+                            "flex-1 min-h-11 rounded-md border px-2 py-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
                             (active
                                 ? "bg-primary text-primary-foreground border-primary"
                                 : "bg-transparent text-foreground border-border hover:bg-accent")
@@ -195,7 +195,7 @@ export function SlippageSelector({ value, onChange }: SlippageSelectorProps) {
                     aria-invalid={error !== null}
                     aria-describedby={error ? errorId : undefined}
                     className={
-                        "flex-1 rounded-md border bg-transparent px-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
+                        "flex-1 min-h-11 rounded-md border bg-transparent px-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
                         (error
                             ? "border-destructive text-destructive"
                             : "border-border text-foreground")
@@ -208,7 +208,7 @@ export function SlippageSelector({ value, onChange }: SlippageSelectorProps) {
                     aria-label="Custom slippage tolerance"
                     onClick={startCustomEdit}
                     className={
-                        "flex-1 rounded-md border px-2 py-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
+                        "flex-1 min-h-11 rounded-md border px-2 py-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring " +
                         (isCustomActive
                             ? "bg-primary text-primary-foreground border-primary"
                             : "bg-transparent text-foreground border-border hover:bg-accent")

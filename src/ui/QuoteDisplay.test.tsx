@@ -1,10 +1,18 @@
 /** @vitest-environment jsdom */
-import { describe, it, expect, afterEach } from "vitest";
-import { render, cleanup } from "@testing-library/react";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { render, cleanup, fireEvent } from "@testing-library/react";
 import { QuoteDisplay } from "./QuoteDisplay";
+import { useIsMobile } from "../hooks/use-mobile";
 import type { OrderResponse } from "../types/swap";
 
-afterEach(cleanup);
+vi.mock("../hooks/use-mobile", () => ({
+  useIsMobile: vi.fn(() => false),
+}));
+
+afterEach(() => {
+  cleanup();
+  vi.mocked(useIsMobile).mockReturnValue(false);
+});
 
 function makeQuote(overrides: Partial<OrderResponse> = {}): OrderResponse {
   return {
@@ -146,5 +154,54 @@ describe("QuoteDisplay — priceImpactPct fallback (amendment A-1)", () => {
     );
     const badge = container.querySelector("[data-tone='elevated']");
     expect(badge).not.toBeNull();
+  });
+});
+
+describe("QuoteDisplay — AC-5 mobile collapse behaviour", () => {
+  it("renders details inline (no toggle) on desktop", () => {
+    vi.mocked(useIsMobile).mockReturnValue(false);
+    const { container, queryByRole } = render(
+      <QuoteDisplay quote={makeQuote()} {...DEFAULTS} />,
+    );
+    // Details visible without any user interaction
+    expect(container.textContent).toContain("Router");
+    expect(container.textContent).toContain("Fee");
+    expect(container.textContent).toContain("Slippage");
+    // No "Show details" toggle on desktop
+    expect(queryByRole("button", { name: /show details|hide details/i })).toBeNull();
+  });
+
+  it("collapses details and renders 'Show details' toggle by default on mobile", () => {
+    vi.mocked(useIsMobile).mockReturnValue(true);
+    const { container, getByRole } = render(
+      <QuoteDisplay quote={makeQuote()} {...DEFAULTS} />,
+    );
+    // Headline rows are always visible
+    expect(container.textContent).toContain("Rate");
+    expect(container.textContent).toContain("You receive");
+    // Toggle present + reflects collapsed state via aria-expanded
+    const toggle = getByRole("button", { name: /show details/i });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("expands details when the toggle is clicked on mobile", () => {
+    vi.mocked(useIsMobile).mockReturnValue(true);
+    const { getByRole } = render(
+      <QuoteDisplay quote={makeQuote()} {...DEFAULTS} />,
+    );
+    const toggle = getByRole("button", { name: /show details/i });
+    fireEvent.click(toggle);
+    // After click the label flips to "Hide details" and aria-expanded reflects open
+    const hide = getByRole("button", { name: /hide details/i });
+    expect(hide.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("respects defaultExpanded prop override on mobile", () => {
+    vi.mocked(useIsMobile).mockReturnValue(true);
+    const { getByRole } = render(
+      <QuoteDisplay quote={makeQuote()} {...DEFAULTS} defaultExpanded={true} />,
+    );
+    const toggle = getByRole("button", { name: /hide details/i });
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
   });
 });

@@ -29,6 +29,15 @@ vi.mock("./ui/WalletButton", () => ({
 
 vi.mock("@solana/wallet-adapter-react-ui/styles.css", () => ({}));
 
+// jsdom doesn't implement window.matchMedia. QuoteDisplay (Story 4-1, Task 2)
+// reads useIsMobile() to decide between the desktop inline layout and the
+// mobile collapsed layout; mocking the hook to a stable `false` lets every App
+// test exercise the desktop branch (which mirrors the legacy always-expanded
+// behaviour assumed by these tests) without touching jsdom internals.
+vi.mock("./hooks/use-mobile", () => ({
+  useIsMobile: () => false,
+}));
+
 // Task 4 orchestration: mock handlers so tests can assert dispatch wiring
 // without needing real balance fetches or wallet signing infrastructure.
 vi.mock("./handlers/preflightChecks", () => ({

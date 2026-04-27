@@ -271,6 +271,26 @@ export function SwapCard() {
         context.state === SwapState.Executing;
     const inFlightDim = inFlight ? "opacity-60 pointer-events-none" : "";
 
+    // Brief green-border flash on the output panel when a swap succeeds (A-12
+    // polish). Toggled on the Executing → Success transition and cleared after
+    // ~600ms so the styling falls back to the standard border. Wrapped in
+    // `motion-safe:` via the className below so reduced-motion users get the
+    // static success border without the transition.
+    const [flashSuccess, setFlashSuccess] = useState(false);
+    const prevStateRef = useRef(context.state);
+    useEffect(() => {
+        const wasInFlight =
+            prevStateRef.current === SwapState.Executing ||
+            prevStateRef.current === SwapState.Signing;
+        prevStateRef.current = context.state;
+        if (wasInFlight && context.state === SwapState.Success) {
+            setFlashSuccess(true);
+            const id = setTimeout(() => setFlashSuccess(false), 600);
+            return () => clearTimeout(id);
+        }
+        return undefined;
+    }, [context.state]);
+
     // Auto-refresh quote every QUOTE_REFRESH_INTERVAL_MS while QuoteReady + tab visible.
     // Pauses while hidden to avoid burning RPC; immediately refetches on tab refocus.
     //
@@ -358,7 +378,7 @@ export function SwapCard() {
                         variant="outline"
                         aria-label="Select input token"
                         onClick={() => setSelectorSide("input")}
-                        className="text-sm font-medium h-auto py-1 px-2"
+                        className="text-sm font-medium min-h-11 px-3"
                     >
                         From: {inputToken.symbol}
                     </Button>
@@ -369,14 +389,16 @@ export function SwapCard() {
                     value={inputAmount}
                     onChange={(e) => handleAmountChange(e.target.value)}
                     placeholder="0.00"
-                    className="w-full bg-transparent text-xl font-medium text-foreground outline-none placeholder:text-muted-foreground mt-1"
+                    className="w-full bg-transparent text-xl font-medium text-foreground outline-none placeholder:text-muted-foreground mt-1 min-h-11"
                     aria-label={`Amount of ${inputToken.symbol} to swap`}
                 />
             </div>
 
-            {/* Output display */}
+            {/* Output display — gains a brief motion-safe green-border flash on
+                Executing → Success (A-12). Reduced-motion users still see the
+                static success border, just without the colour transition. */}
             <div
-                className={`border border-border rounded-lg p-3 ${inFlightDim}`}
+                className={`border rounded-lg p-3 motion-safe:transition-colors motion-safe:duration-500 ${inFlightDim} ${flashSuccess ? "border-emerald-500" : "border-border"}`}
                 inert={inFlight || undefined}
             >
                 <div className="flex items-center justify-between">
@@ -387,12 +409,12 @@ export function SwapCard() {
                         variant="outline"
                         aria-label="Select output token"
                         onClick={() => setSelectorSide("output")}
-                        className="text-sm font-medium h-auto py-1 px-2"
+                        className="text-sm font-medium min-h-11 px-3"
                     >
                         To: {outputToken.symbol}
                     </Button>
                 </div>
-                <div className="text-xl font-medium text-muted-foreground mt-1">
+                <div className="text-xl font-medium text-muted-foreground mt-1 min-h-11 flex items-center">
                     {hasQuote && context.quote
                         ? (
                               Number(context.quote.outAmount) /
@@ -512,7 +534,7 @@ export function SwapCard() {
                 <Button
                     type="button"
                     size="lg"
-                    className="w-full py-3 text-sm font-medium"
+                    className="w-full min-h-11 py-3 text-sm font-medium"
                     onClick={() => setWalletModalVisible(true)}
                     aria-label="Connect Wallet"
                 >

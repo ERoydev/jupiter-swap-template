@@ -111,7 +111,7 @@ export function SwapButton({
 
   const button = (
     <Button
-      className="w-full"
+      className="w-full min-h-11"
       size="lg"
       disabled={surface.disabled}
       aria-disabled={surface.disabled}
