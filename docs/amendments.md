@@ -513,3 +513,253 @@ export async function executeOrder(
 - `src/services/jupiterService.ts` — return type tightened, `ExecuteResponse` import added.
 - `src/services/jupiterService.test.ts` — 3 new cases under `describe("jupiterService.executeOrder", ...)` covering POST contract, success-path return shape, and synchronous `ConfigError` when `VITE_JUPITER_API_KEY` is empty.
 - No downstream consumers exist yet — this amendment lands the type at the same time as Story 3-2 introduces the first call site (Task 4).
+
+---
+
+## A-11 — 2026-04-26 — `swapHandler` module extraction deferred; orchestration housed in `useSwapExecution` hook (Story 3-2)
+
+**Original architecture decision** (`docs/architecture.md` §Component Decomposition):
+The `swapHandler` is listed as a separate handler module under `src/handlers/`,
+peer to `preflightChecks` and `transactionSigner`. Plan AC-3-2-4 wording
+references `swapHandler.executeSwap()` running the correlation-ID-tagged log
+emission and the signed-tx → /execute pipeline.
+
+**Amended behavior** (Story 3-2, Task 4):
+The `/execute` orchestration ships in a custom hook
+`src/hooks/useSwapExecution.ts` rather than a `src/handlers/swapHandler.ts`
+module. `SwapCard` consumes it as
+`const { handleSwap, lastSwapResult } = useSwapExecution({ ... })`,
+replacing what would otherwise be a ~190-line inline `useCallback`.
+AC-3-2-4 behavior is fully preserved — `swapCorrelationId` is generated
+via `crypto.randomUUID()` at the top of the callback and threaded through
+every log event (`swap_started`, `preflight_passed`/`preflight_failed`,
+`signing_started`/`signing_failed`, `execute_started`/`execute_succeeded`/
+`execute_failed`, plus `swap_aborted_stale_quote`).
+
+**Why a hook, not a handler module (deferred extraction):**
+1. **State coupling.** The orchestration must own component-local
+   `lastSwapResult` state and a cleanup `useEffect` that fires when the
+   reducer transitions out of `Success`. A plain handler module cannot hold
+   React state — it would need a separate state-owner wrapper, doubling
+   the layer count for one caller.
+2. **Single caller today.** `SwapCard` is the only consumer. A handler
+   module would add a third file (return-type contract + tests) for zero
+   current call-site savings.
+3. **3-3 trigger preserved.** When the retry loop forces a second consumer
+   pattern ("run one /execute attempt N times"), the hook's `handleSwap`
+   body becomes the natural extraction unit. Hook is a stable migration
+   step, not a final destination.
+
+**Why safe (Rule 3 per code-standards):**
+- No existing caller imports a `swapHandler` symbol — there is no contract
+  to break.
+- Architecture's `swapHandler` listing is forward-looking; this amendment
+  re-times the extraction to Story 3-3 when retries justify a second
+  consumer.
+- All 18 must_have truths from Story 3-2 are satisfied at the behavior
+  level by the hook implementation.
+
+**Why I revisited mid-task:**
+The first cut inlined the entire orchestration directly in `SwapCard`.
+User feedback before commit flagged that App.tsx became "too stuffed with
+code" — the file grew to ~660 lines with one ~190-line callback.
+Extracting to a hook (chosen over handler-module extraction so 3-3 can
+still design the return-type contract properly) shrinks `SwapCard` back
+toward render-only without locking in a premature handler API.
+
+**Files affected:**
+- `src/hooks/useSwapExecution.ts` (new) — owns `handleSwap`,
+  `lastSwapResult` state, and the cleanup `useEffect`. Returns
+  `{ handleSwap, lastSwapResult }`.
+- `src/utils/parseAmount.ts` (new) — extracted the shared
+  `parsePositiveAmount` helper (was inlined at the top of App.tsx; now
+  consumed by both App.tsx and the hook).
+- `src/App.tsx` — `useSwapExecution` call replaces the inline callback +
+  state + cleanup effect; `<SuccessDisplay />` mounted between the error
+  block and the swap/connect button block. Net: 660 → 516 lines.
+- `src/App.test.tsx` — 5 new integration cases under
+  `describe("SwapCard — Story 3-2 execute flow ...")` covering happy
+  path, retryable code -1000, non-retryable code -2, network throw
+  pass-through, and NEW_SWAP unmount. Tests exercise the hook composed
+  inside `SwapCard`; no separate hook-level test file added this story.
+
+**Revisit (Story 3-3):**
+When the retry loop is added, extract the orchestration body from
+`useSwapExecution` into `src/handlers/swapHandler.ts`. The trigger is
+when 3-3 needs to call "do one /execute attempt" multiple times — the
+handler's return type
+(`{ kind: "success"; result } | { kind: "error"; err } | { kind: "retry-eligible"; attemptCount }`)
+emerges naturally from that requirement. The hook becomes a thin
+orchestration wrapper around the handler at that point.
+
+---
+
+## A-12 — 2026-04-27 — Pull in-flight visibility forward from 4-1 into 3-2 (`SwapInFlightPanel`)
+
+**Original story scope** (Story 3-2, Out of Scope section):
+
+> **4-1 (success-state animation):** card-overlay transitions, output-border
+> flash-green, alert slide-in animation per design-system §15.
+
+In-flight visibility (the user-perceptible "something is happening" state
+between sign-click and success/error) was implicitly bundled with 4-1's
+"Pre-flight UX + Responsive Layout" polish sweep. The 3-2 implementation
+relied solely on `SwapButton`'s text + inline spinner (Task 3) to signal
+the Signing → Executing → Success transitions.
+
+**Amended scope** (Story 3-2, mid-Task 4):
+
+A minimum-viable in-flight panel ships in 3-2:
+
+- `src/ui/SwapInFlightPanel.tsx` — new presentational component, replaces
+  the `QuoteDisplay` block in the `SwapCard` render tree when
+  `state === Signing || state === Executing`. Distinguishes the two
+  phases with copy ("Waiting for wallet…" vs. "Confirming on
+  Solana…"), a large centered `Loader2` spinner, and a one-line
+  hint subtitle.
+- `SwapCard` dims the input/output/slippage blocks
+  (`opacity-60 pointer-events-none`) during in-flight to keep the panel
+  the visual focus and prevent stray clicks on inputs the reducer
+  already rejects.
+
+The full 4-1 polish sweep (card-level backdrop overlay, slide-in
+animation, output-border flash-green on success, toast notifications)
+remains explicitly out of scope.
+
+**Why now (deferred-but-required):**
+
+User testing on the freshly-implemented 3-2 flow surfaced that
+button-text-only feedback is too thin for a 1–3s in-flight window —
+the wallet popup (visible) and the SuccessDisplay alert (visible) are
+the only legible state changes; the gap between them is invisible.
+This is a swap-flow correctness concern (the user must trust the swap
+is happening), not a polish concern. 4-1 is the wrong owner because
+4-1's purpose is "polish on top of a flow that already feels right";
+the flow itself needs to feel right first.
+
+**Why safe (Rule 3 per code-standards):**
+
+- Net-new component file — no contract change to anything existing.
+- App.tsx render-tree change is local: one conditional wraps the
+  `QuoteDisplay` block; opacity wrappers are additive on the input/
+  output/slippage blocks.
+- Reducer untouched. State machine still rejects input-changing
+  actions during Signing/Executing — `pointer-events-none` is a
+  visual reinforcement, not a new gate.
+- Existing 23 App.test.tsx integration cases continue to pass; the
+  panel mounts inside the same SwapCard rendered by `renderSwap()`.
+- 4-1's polish work loses nothing — backdrop overlay, animations,
+  flash-green still belong there. 3-2 ships the *floor*, not the
+  ceiling.
+
+**Files affected:**
+
+- `src/ui/SwapInFlightPanel.tsx` (new)
+- `src/ui/SwapInFlightPanel.test.tsx` (new — 4 jsdom cases:
+  Signing copy, Executing copy, spinner present, `role="status"`)
+- `src/App.tsx` — `inFlight` boolean computed; opacity wrappers on
+  three blocks; conditional swap of `QuoteDisplay` for
+  `SwapInFlightPanel` during in-flight.
+
+**Revisit (Story 4-1):**
+
+Add the design-system §15 polish on top of the panel:
+- Card-level `bg-background/50` backdrop during signing/executing.
+- Slide-in / fade-in animation on the panel mount (200ms ease-in-out).
+- Output-border flash-green on the SuccessDisplay alert (200ms).
+- Toast notifications on Success (per spec AC-FR-9).
+
+---
+
+## A-13 — 2026-04-27 — Surface Jupiter's `ExecuteResponse.error` field; include code in unknown-error fallback (Story 3-2)
+
+**Original story spec** (Story 3-2 must_haves + Architecture Guardrails):
+
+> On Jupiter response with non-success (status=='Failed' OR code!==0),
+> handleSwap dispatches EXECUTE_ERROR with a SwapError constructed via
+> `mapErrorCode(response.code)`, preserving response.code, mapping.retryable,
+> and details `{requestId, responseBody, httpStatus: 200}`.
+
+The story prescribed building the user-facing message exclusively from
+`mapErrorCode(response.code).message`. The optional `response.error` field
+(Jupiter's own human-readable diagnostic) was stored only inside
+`details.responseBody` and never surfaced to the user.
+
+**Amended behavior** (Story 3-2, mid-Task 4):
+
+`useSwapExecution` now prefers `response.error?.trim()` when present;
+`mapping.message` is used only as fallback. The error mapper's
+unknown-code fallback now interpolates the numeric code into the
+user-facing message:
+
+```ts
+// useSwapExecution.ts (excerpt)
+const userMessage =
+  response.error && response.error.trim().length > 0
+    ? response.error.trim()
+    : mapping.message;
+
+// jupiterErrorMapper.ts (unknown-code fallback)
+return {
+  type: ErrorType.UnknownError,
+  message: `Transaction failed (code: ${code}). Try increasing slippage tolerance and try again.`,
+  retryable: false,
+};
+```
+
+**Why now (caught in manual testing):**
+
+User testing reproduced the failure mode:
+1. Slippage tolerance set to 0.1% (intentionally tight).
+2. Phantom showed "simulate transaction failed" warning; user signed
+   anyway (Phantom warns, does not auto-reject).
+3. Transaction landed on-chain; Jupiter `/execute` returned a failure
+   response with `error: "Slippage tolerance exceeded"`.
+4. App rendered the generic `mapErrorCode` fallback ("Something went
+   wrong. Please try again.") — gave the user no actionable info even
+   though Jupiter had told us exactly what failed.
+
+The `response.error` field is the *most useful* piece of information
+about why a swap failed; ignoring it while preserving `code` and
+`retryable` is a deliberate-feeling but accidental choice in the
+original spec.
+
+**Why not deferred to Story 3-3:**
+
+Story 3-3 ("Retry Logic + Error Recovery") owns retry mechanics and
+restructured error UX. A-13 changes neither. It surfaces a field we
+already capture (it's in `details.responseBody`) — pure information
+flow, no new policy. Hiding it until 3-3 lands would mean shipping a
+known-misleading error message in 3-2.
+
+**Why safe (Rule 3 per code-standards):**
+
+- Net code change: ~5 lines in `useSwapExecution`, ~5 lines in the
+  mapper.
+- All 27 prior App.test.tsx + hook integration cases continue to pass
+  (no test asserted the exact "Something went wrong" fallback string;
+  existing -1000 / -2 / network-throw tests still match because
+  responses without `error` field fall back to `mapping.message`).
+- 3 new App.test.tsx cases cover: response.error wins over mapping
+  (-2002 + slippage error), fallback to mapping when error absent
+  (-2002 only), and code-bearing unknown fallback (-9999).
+- `mapping.retryable` and `mapping.type` semantics unchanged — Story
+  3-3's retry logic still keys on these.
+- `details.responseBody` still contains the full response, so
+  observability is unchanged.
+
+**Files affected:**
+
+- `src/utils/jupiterErrorMapper.ts` — `mapErrorCode` returns a
+  code-bearing message when the code isn't in `ERROR_MAP`. Static
+  `UNKNOWN_ERROR` constant removed (replaced by inline build).
+- `src/hooks/useSwapExecution.ts` — `userMessage = response.error || mapping.message`
+  preferred when constructing the SwapError.
+- `src/App.test.tsx` — 3 new cases under the Story 3-2 execute flow
+  describe block.
+
+**Revisit (Story 3-3):**
+
+When 3-3 implements the retry loop, `response.error` should also
+appear in retry-attempt diagnostics ("Attempt 2 failed: …"). Today's
+amendment is the data layer; 3-3 is the experience layer.

@@ -74,12 +74,18 @@ const ERROR_MAP: Record<number, ErrorMapping> = {
   },
 };
 
-const UNKNOWN_ERROR: ErrorMapping = {
-  type: ErrorType.UnknownError,
-  message: "Something went wrong. Please try again.",
-  retryable: false,
-};
-
+/**
+ * Returns the canonical mapping for a known Jupiter Ultra error code, or a
+ * code-bearing fallback for unknown codes. The fallback embeds the numeric
+ * code in the user-facing message so support can act on otherwise-silent
+ * failures (vs. the previous opaque "Something went wrong"). A-13.
+ */
 export function mapErrorCode(code: number): ErrorMapping {
-  return ERROR_MAP[code] ?? UNKNOWN_ERROR;
+  const known = ERROR_MAP[code];
+  if (known) return known;
+  return {
+    type: ErrorType.UnknownError,
+    message: `Transaction failed (code: ${code}). Try increasing slippage tolerance and try again.`,
+    retryable: false,
+  };
 }
